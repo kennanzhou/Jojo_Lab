@@ -37319,7 +37319,7 @@ function getSongPayload() {
       "report_lyric_format_or_spelling_issues_without_reproducing_full_lyrics",
       "translate_each_line_to_natural_chinese",
       "explain_each_line_in_child_friendly_chinese",
-      "extract_all_unique_words_phrases_and_slang",
+      "extract_every_unique_lyric_word_plus_phrases_and_slang",
       "lemmatize_surface_forms_to_base_forms",
       "include_pronunciation_tips",
       "include_parent_follow_up_questions",
@@ -37402,7 +37402,7 @@ function buildSongPrompt(payload) {
   ],
   "vocabulary": [
     {
-      "word": "进入词库的英文原型；短语保留空格",
+      "word": "进入词库的英文词或短语；歌词中出现的每个有语义价值的唯一英文词都必须有词条，短语保留空格",
       "surfaceForms": ["歌词中出现过的形式"],
       "zh": "适合孩子的中文释义",
       "ipa": "/音标/",
@@ -37423,7 +37423,9 @@ function buildSongPrompt(payload) {
 - lines.en 必须来自用户提供的 lyrics 原句。
 - 如果用户已选择候选歌曲或填写歌名/歌手，请先校对用户粘贴的歌词格式和内容：检查明显拼写错误、可疑断行、重复/缺失迹象、歌名歌手不匹配、记述错误。不要调用外部搜索，不要编造官方歌词，不要把缺失歌词补出来；只在 lyricsReview.issues 里给短摘录和核对建议。
 - 不要因为校对而改写 lines.en；lines.en 必须保持用户粘贴的原句。
-- vocabulary 要尽量提取歌词中所有不重复的有学习价值的单词、词组和俚语；动词时态、名词复数、比较级等要恢复为原型。
+- vocabulary 必须覆盖 lyrics 中出现过的每一个不重复、有语义价值的英文词，包括基础但有画面或动作含义的词、重复副歌中的核心词，以及名词复数、动词时态、比较级等表层形式；不要因为 sun / day / run 这类词简单而跳过。
+- 超基础功能词不要进入词库，例如 a / an / the / and / or / but / is / am / are / was / were / be / to / of / in / on / at / for / with / from / by / as / that / i / you / will / oh 等；这些词如果出现在固定搭配中，可以保留在短语词条里，但不单独建词条。
+- 词组、固定搭配、俚语和歌词中特别重要的表达要作为额外词条加入，例如 early morning / jet plane / sleep away；这些短语不能替代其中单个词的词条。
 - 俚语必须 isSlang=true 并写 slangNote。
 - example 必须是新写的短句，不能复制歌词原句。
 - 中文使用简洁亲子陪读语气。
@@ -37892,7 +37894,7 @@ function renderSongAnalysis(data) {
       <strong>Word Camp 词库候选</strong>
       <p class="translation-line">${vocabulary.length} 个不重复词条；点击“加入 Word Camp 词库”后会成为独立词库。</p>
       <div class="word-chip-grid">
-        ${vocabulary.slice(0, 80).map((item) => `
+        ${vocabulary.map((item) => `
           <button class="word-chip" type="button" data-word="${escapeHtml(item.word || item.lemma || "")}">
             <strong>${escapeHtml(item.word || item.lemma || "")}</strong>
             <small>${escapeHtml(item.zh || item.meaningInSong || "")}${item.pos ? " · " + escapeHtml(item.pos) : ""}</small>

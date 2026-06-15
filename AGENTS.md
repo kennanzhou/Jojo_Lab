@@ -63,6 +63,9 @@ Primary use cases:
 - The MiniMax workflow should make real API errors visible. Do not show "没有找到明确候选" when the model returned an error such as invalid key, quota, model, or endpoint failure.
 - Successful song analyses must persist. A refreshed page should restore the latest analysis and expose recent analyzed songs in the Song Notes workflow.
 - The app must not auto-generate, scrape, or display full commercial lyrics. Users should paste lyrics they own, are authorized to use, or can reasonably use for private study.
+- Song Notes vocabulary extraction must include every unique meaningful English word that appears in the user-provided lyrics, including simple image/action words, repeated chorus words, and inflected surface forms. Do not skip words like sun/day/run just because they are easy.
+- Ultra-basic function words should not become standalone vocabulary entries, including articles, common conjunctions, be-verbs, basic pronouns, common prepositions, auxiliaries, and filler interjections such as a/an/the/and/is/to/of/in/with/from/that/I/you/will/oh. If these words appear inside a fixed phrase, keep the phrase entry but do not add the function word alone.
+- Fixed phrases, lyric-specific expressions, and slang should be added as extra vocabulary entries, but they must not replace the individual meaningful word entries inside the phrase.
 - Song actions should be short but clear: search candidate, analyze song, add to Word Camp.
 
 ## Kana Quest Specifics

@@ -251,7 +251,7 @@ function aiMessages(prompt) {
 }
 
 function quoteCurlConfig(value) {
-  return `"${String(value).replace(/\\/g, "\\\\").replace(/"/g, "\\\"")}"`;
+  return `"${String(value).replace(/\\/g, "\\\\").replace(/"/g, "\\\"").replace(/\r/g, "\\r").replace(/\n/g, "\\n")}"`;
 }
 
 function curlPostJson(endpoint, apiKey, payload) {
@@ -294,9 +294,12 @@ function curlPostJson(endpoint, apiKey, payload) {
 }
 
 async function postMinimaxJson(endpoint, apiKey, payload) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Number(process.env.MINIMAX_FETCH_TIMEOUT_MS || 12000));
   try {
     const response = await fetch(endpoint, {
       method: "POST",
+      signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`
@@ -312,6 +315,9 @@ async function postMinimaxJson(endpoint, apiKey, payload) {
     } catch (curlError) {
       throw new Error(`fetch: ${error.cause?.message || error.message}; curl: ${curlError.message}`);
     }
+  }
+  finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -347,15 +353,19 @@ async function proxyMinimax(body) {
   let usedEndpoint = endpoint;
   for (const candidateEndpoint of endpoints) {
     try {
-      response = await postMinimaxJson(candidateEndpoint, apiKey, payload);
-      usedEndpoint = candidateEndpoint;
-      break;
+      const candidateResponse = await postMinimaxJson(candidateEndpoint, apiKey, payload);
+      if (candidateResponse.ok) {
+        response = candidateResponse;
+        usedEndpoint = candidateEndpoint;
+        break;
+      }
+      failures.push(`${candidateEndpoint}: HTTP ${candidateResponse.status} (${candidateResponse.source || "fetch"}): ${candidateResponse.text.slice(0, 240)}`);
     } catch (error) {
       failures.push(`${candidateEndpoint}: ${error.cause?.message || error.message}`);
     }
   }
   if (!response) {
-    throw new Error(`MiniMax 网络连接失败：${failures.join("；")}。如果浏览器能联网但这里失败，通常是 Node 本机服务没有走系统代理/VPN。`);
+    throw new Error(`MiniMax 请求失败：${failures.join("；")}。如果浏览器能联网但这里失败，通常是 Node 本机服务没有走系统代理/VPN，或当前 Key 只支持其中一个 MiniMax 域名。`);
   }
   const text = response.text;
   if (!response.ok) throw new Error(`MiniMax 返回 ${response.status} (${usedEndpoint}, ${response.source || "fetch"}): ${text.slice(0, 300)}`);
