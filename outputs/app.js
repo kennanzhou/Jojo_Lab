@@ -35225,6 +35225,11 @@ let wordRepeatRecognizer = null;
 let pendingArtFile = null;
 const maxProgressRows = 6;
 const minWordsPerBank = 10;
+const wordSmallStarsPerBig = 10;
+const kanaMasteriesPerSmallStar = 2;
+const kanaSmallStarsPerBig = 12;
+const phonicsSmallStarsPerChallenge = 2;
+const phonicsSmallStarsPerBig = 6;
 
 const wordBankLabels = {
   "ket-official": "KET 官方词汇表",
@@ -35370,11 +35375,13 @@ const state = {
   kana: null,
   kanaScore: Number(localStorage.getItem("jojoKanaScore") || 0),
   kanaProgress: loadKanaProgress(),
+  kanaRewards: loadKanaRewards(),
   word: null,
   spelling: { missing: [], answer: [] },
   phonicsKey: "short-a",
   phonicsStreak: 0,
   phonicsQuest: loadPhonicsQuestState(),
+  phonicsRewards: loadPhonicsRewards(),
   played: Number(localStorage.getItem("jojoPlayed") || 0),
   wordBank: localStorage.getItem("jojoWordBank") || "ket-official",
   dailyWordCount: normalizeDailyWordCount(localStorage.getItem("jojoDailyWordCount") || 20),
@@ -35710,6 +35717,29 @@ function persistKanaProgress() {
   saveSharedState({ kanaProgress: state.kanaProgress });
 }
 
+function normalizeKanaRewards(value = {}) {
+  return {
+    smallStars: Math.max(0, Number(value.smallStars || 0)),
+    bigStars: Math.max(0, Number(value.bigStars || 0)),
+    masteryCredits: Math.max(0, Math.min(kanaMasteriesPerSmallStar - 1, Number(value.masteryCredits || 0))),
+    awardedKeys: Array.isArray(value.awardedKeys) ? value.awardedKeys.map(String) : []
+  };
+}
+
+function loadKanaRewards() {
+  try {
+    return normalizeKanaRewards(JSON.parse(localStorage.getItem("jojoKanaRewards") || "{}"));
+  } catch {
+    return normalizeKanaRewards();
+  }
+}
+
+function persistKanaRewards() {
+  state.kanaRewards = normalizeKanaRewards(state.kanaRewards);
+  localStorage.setItem("jojoKanaRewards", JSON.stringify(state.kanaRewards));
+  saveSharedState({ kanaRewards: state.kanaRewards });
+}
+
 function kanaProgressItems() {
   return kanaBase.flatMap((item) => [
     { key: `hiragana:${item.romaji}`, label: item.hiragana, romaji: item.romaji, script: "平" },
@@ -35821,23 +35851,53 @@ function dailyWords() {
   return wordsForSelectedBank().filter((word) => planSet.has(word.word));
 }
 
-function renderWordRewards() {
-  const rewards = state.wordRewards || { smallStars: 0, bigStars: 0 };
-  const smallStars = Math.max(0, Math.min(9, rewards.smallStars || 0));
-  const bigStars = Math.max(0, rewards.bigStars || 0);
-  $("#wordSmallStarTray").innerHTML = Array.from({ length: smallStars }, () => `
+function renderStarRewards(rewards, smallTraySelector, bigTraySelector, smallStarsPerBig) {
+  const smallTray = $(smallTraySelector);
+  const bigTray = $(bigTraySelector);
+  if (!smallTray || !bigTray) return;
+  const smallStars = Math.max(0, Math.min(smallStarsPerBig - 1, Number(rewards?.smallStars || 0)));
+  const bigStars = Math.max(0, Number(rewards?.bigStars || 0));
+  smallTray.innerHTML = `${Array.from({ length: smallStars }, () => `
     <img src="./assets/gold-star-reward-small.png" alt="小星星">
-  `).join("");
+  `).join("")}<span class="star-progress-text">${smallStars}/${smallStarsPerBig}</span>`;
   const visibleBigStars = Math.min(bigStars, 4);
-  $("#wordBigStarTray").innerHTML = bigStars
-    ? `${Array.from({ length: visibleBigStars }, () => `<img src="./assets/gold-star-reward-small.png" alt="大星星">`).join("")}${bigStars > visibleBigStars ? `<span class="star-more">+${bigStars - visibleBigStars}</span>` : ""}`
+  bigTray.innerHTML = bigStars
+    ? `${Array.from({ length: visibleBigStars }, () => `<img src="./assets/gold-star-reward.png" alt="大星星">`).join("")}${bigStars > visibleBigStars ? `<span class="star-more">+${bigStars - visibleBigStars}</span>` : ""}`
     : "";
+}
+
+function renderWordRewards() {
+  state.wordRewards = { smallStars: 0, bigStars: 0, ...state.wordRewards };
+  renderStarRewards(state.wordRewards, "#wordSmallStarTray", "#wordBigStarTray", wordSmallStarsPerBig);
+  const bigStars = Math.max(0, Number(state.wordRewards?.bigStars || 0));
   if ($("#cardhouseBigStarCount")) $("#cardhouseBigStarCount").textContent = String(bigStars);
 }
 
-function animateWordStarReward(type) {
-  const panel = $("#wordStarPanel");
-  const source = $("#wordPrompt");
+function renderKanaRewards() {
+  state.kanaRewards = normalizeKanaRewards(state.kanaRewards);
+  renderStarRewards(state.kanaRewards, "#kanaSmallStarTray", "#kanaBigStarTray", kanaSmallStarsPerBig);
+}
+
+function renderPhonicsRewards() {
+  state.phonicsRewards = normalizePhonicsRewards(state.phonicsRewards);
+  renderStarRewards(state.phonicsRewards, "#phonicsSmallStarTray", "#phonicsBigStarTray", phonicsSmallStarsPerBig);
+}
+
+function awardSmallStars(rewards, amount, smallStarsPerBig) {
+  rewards.smallStars = Math.max(0, Number(rewards.smallStars || 0)) + amount;
+  rewards.bigStars = Math.max(0, Number(rewards.bigStars || 0));
+  let earned = amount > 0 ? "small" : "";
+  while (rewards.smallStars >= smallStarsPerBig) {
+    rewards.smallStars -= smallStarsPerBig;
+    rewards.bigStars += 1;
+    earned = "big";
+  }
+  return earned;
+}
+
+function animateLearningStarReward(panelSelector, sourceSelector, type) {
+  const panel = $(panelSelector);
+  const source = $(sourceSelector);
   if (!panel || !source) return;
   const start = source.getBoundingClientRect();
   const end = panel.getBoundingClientRect();
@@ -35857,19 +35917,59 @@ function animateWordStarReward(type) {
   star.addEventListener("animationend", () => star.remove(), { once: true });
 }
 
+function animateWordStarReward(type) {
+  animateLearningStarReward("#wordStarPanel", "#wordPrompt", type);
+}
+
+function animateKanaStarReward(type) {
+  animateLearningStarReward("#kanaStarPanel", "#kanaPrompt", type);
+}
+
+function animatePhonicsStarReward(type) {
+  animateLearningStarReward("#phonicsRewardPanel", ".phonics-quest-card:not([hidden])", type);
+}
+
 function awardWordMasteryReward() {
-  state.wordRewards.smallStars = (state.wordRewards.smallStars || 0) + 1;
-  let earned = "small";
-  if (state.wordRewards.smallStars >= 10) {
-    state.wordRewards.smallStars = 0;
-    state.wordRewards.bigStars = (state.wordRewards.bigStars || 0) + 1;
-    earned = "big";
-  }
+  state.wordRewards = { smallStars: 0, bigStars: 0, ...state.wordRewards };
+  const earned = awardSmallStars(state.wordRewards, 1, wordSmallStarsPerBig);
   persistWordRewards();
   renderWordRewards();
   playStarCue(earned);
   animateWordStarReward(earned);
   showToast(earned === "big" ? "10 颗小星合成 1 颗大星！" : "单词达到 3 分，获得 1 颗小星！", "good");
+}
+
+function awardKanaMasteryReward(progressKey) {
+  state.kanaRewards = normalizeKanaRewards(state.kanaRewards);
+  if (state.kanaRewards.awardedKeys.includes(progressKey)) return;
+  state.kanaRewards.awardedKeys.push(progressKey);
+  state.kanaRewards.masteryCredits += 1;
+  let earned = "";
+  if (state.kanaRewards.masteryCredits >= kanaMasteriesPerSmallStar) {
+    state.kanaRewards.masteryCredits -= kanaMasteriesPerSmallStar;
+    earned = awardSmallStars(state.kanaRewards, 1, kanaSmallStarsPerBig);
+  }
+  persistKanaRewards();
+  renderKanaRewards();
+  if (earned) {
+    playStarCue(earned);
+    animateKanaStarReward(earned);
+    showToast(earned === "big" ? "Kana 12 颗小星合成 1 颗大星！" : "新掌握 2 个假名，获得 1 颗小星！", "good");
+  } else {
+    showToast("新掌握 1 个假名，再掌握 1 个换小星。", "good");
+  }
+}
+
+function awardPhonicsChallengeReward(unitIndex) {
+  state.phonicsRewards = normalizePhonicsRewards(state.phonicsRewards);
+  if (state.phonicsRewards.awardedUnits.includes(unitIndex)) return;
+  state.phonicsRewards.awardedUnits.push(unitIndex);
+  const earned = awardSmallStars(state.phonicsRewards, phonicsSmallStarsPerChallenge, phonicsSmallStarsPerBig);
+  persistPhonicsRewards();
+  renderPhonicsRewards();
+  playStarCue(earned);
+  animatePhonicsStarReward(earned);
+  showToast(earned === "big" ? "Phonics 6 颗小星合成 1 颗大星！" : "完成单元挑战，获得 2 颗小星！", "good");
 }
 
 
@@ -36374,6 +36474,10 @@ function applySharedState(data) {
     state.kanaProgress = data.kanaProgress;
     localStorage.setItem("jojoKanaProgress", JSON.stringify(state.kanaProgress));
   }
+  if (data.kanaRewards && typeof data.kanaRewards === "object") {
+    state.kanaRewards = normalizeKanaRewards(data.kanaRewards);
+    localStorage.setItem("jojoKanaRewards", JSON.stringify(state.kanaRewards));
+  }
   if (typeof data.played === "number") {
     state.played = data.played;
     localStorage.setItem("jojoPlayed", String(state.played));
@@ -36430,6 +36534,10 @@ function applySharedState(data) {
   if (data.phonicsQuest && typeof data.phonicsQuest === "object") {
     state.phonicsQuest = { ...loadPhonicsQuestState(), ...data.phonicsQuest };
     localStorage.setItem("jojoPhonicsQuestState", JSON.stringify(state.phonicsQuest));
+  }
+  if (data.phonicsRewards && typeof data.phonicsRewards === "object") {
+    state.phonicsRewards = normalizePhonicsRewards(data.phonicsRewards);
+    localStorage.setItem("jojoPhonicsRewards", JSON.stringify(state.phonicsRewards));
   }
   if (data.cardCottage && typeof data.cardCottage === "object") {
     state.cardCottage = normalizeCardCottageState(data.cardCottage);
@@ -36602,6 +36710,7 @@ function newKanaQuestion() {
 function handleKanaAnswer(isCorrect, correct) {
   const feedback = $("#kanaFeedback");
   const record = kanaRecord(state.kana.progressKey);
+  const wasMastered = isKanaMastered(state.kana.progressKey);
   if (isCorrect) {
     $all("#kanaOptions button").forEach((button) => {
       button.disabled = true;
@@ -36622,6 +36731,9 @@ function handleKanaAnswer(isCorrect, correct) {
     }
     persistKanaProgress();
     renderKanaProgress();
+    if (!wasMastered && isKanaMastered(state.kana.progressKey)) {
+      awardKanaMasteryReward(state.kana.progressKey);
+    }
     state.kanaScore += 1;
     localStorage.setItem("jojoKanaScore", String(state.kanaScore));
     $("#kanaScore").textContent = state.kanaScore;
@@ -36736,6 +36848,19 @@ function masteryLabel(word) {
   return `${level} / 3`;
 }
 
+function masteryButtonsHtml(word, level) {
+  const wordText = escapeHtml(word.word);
+  return ["0", "1", "2", "3", "N"].map((value) => `
+    <button
+      class="mastery-button level-${value.toLowerCase()}${value === level ? " is-active" : ""}"
+      type="button"
+      data-word="${wordText}"
+      data-level="${value}"
+      aria-pressed="${value === level ? "true" : "false"}"
+    >${value}</button>
+  `).join("");
+}
+
 function renderWordLibrary() {
   const bank = currentWordBank();
   const bankWords = wordsForSelectedBank();
@@ -36748,9 +36873,9 @@ function renderWordLibrary() {
         <td>${escapeHtml(word.ipa)}</td>
         <td>${escapeHtml(word.zh)}</td>
         <td>
-          <select class="mastery-select level-${level.toLowerCase()}" data-word="${escapeHtml(word.word)}" aria-label="${escapeHtml(word.word)} 掌握程度">
-            ${["0", "1", "2", "3", "N"].map((value) => `<option value="${value}"${value === level ? " selected" : ""}>${value}</option>`).join("")}
-          </select>
+          <div class="mastery-button-group" role="group" aria-label="${escapeHtml(word.word)} 掌握程度">
+            ${masteryButtonsHtml(word, level)}
+          </div>
         </td>
       </tr>
     `;
@@ -36758,9 +36883,9 @@ function renderWordLibrary() {
   $all(".word-speak-mini").forEach((button) => {
     button.addEventListener("click", () => speak(button.dataset.word));
   });
-  $all(".mastery-select").forEach((select) => {
-    select.addEventListener("change", () => {
-      setWordMastery(select.dataset.word, select.value);
+  $all(".mastery-button").forEach((button) => {
+    button.addEventListener("click", () => {
+      setWordMastery(button.dataset.word, button.dataset.level);
     });
   });
 }
@@ -36861,13 +36986,50 @@ function spellingGapCount(word) {
   return 3;
 }
 
+function spellingGapCombos(length, count) {
+  const combos = [];
+  for (let first = 0; first < length; first += 1) {
+    if (count === 1) {
+      combos.push([first]);
+      continue;
+    }
+    for (let second = first + 1; second < length; second += 1) {
+      if (count === 2) {
+        combos.push([first, second]);
+        continue;
+      }
+      for (let third = second + 1; third < length; third += 1) {
+        combos.push([first, second, third]);
+      }
+    }
+  }
+  return combos;
+}
+
+function adjacentGapCount(positions) {
+  return positions.reduce((total, position, index) => (
+    index > 0 && position - positions[index - 1] === 1 ? total + 1 : total
+  ), 0);
+}
+
+function pickSpellingGapPositions(letters, count) {
+  const combos = spellingGapCombos(letters.length, count);
+  if (!combos.length) return [];
+  const scored = combos.map((positions) => ({
+    positions,
+    adjacent: adjacentGapCount(positions),
+    vowelPenalty: positions.some((index) => "aeiou".includes(letters[index])) ? 0 : 1
+  }));
+  const leastAdjacent = Math.min(...scored.map((item) => item.adjacent));
+  const leastVowelPenalty = Math.min(...scored.filter((item) => item.adjacent === leastAdjacent).map((item) => item.vowelPenalty));
+  const best = scored.filter((item) => item.adjacent === leastAdjacent && item.vowelPenalty === leastVowelPenalty);
+  return sample(best, 1)[0].positions;
+}
+
 function buildSpellingPuzzle(word) {
   const letters = (word.spelling || word.word).toLowerCase().replace(/[^a-z]/g, "").split("");
-  const count = spellingGapCount(letters.join(""));
-  const vowelPositions = letters.map((letter, index) => "aeiou".includes(letter) ? index : -1).filter((index) => index >= 0);
-  const required = vowelPositions.length ? [sample(vowelPositions, 1)[0]] : [];
-  const rest = shuffle(letters.map((_, index) => index).filter((index) => !required.includes(index))).slice(0, Math.max(0, count - required.length));
-  const positions = [...required, ...rest].sort((a, b) => a - b);
+  const count = Math.min(spellingGapCount(letters.join("")), letters.length);
+  const positions = pickSpellingGapPositions(letters, count);
   state.spelling = { missing: positions, answer: [] };
   renderSpellingPuzzle();
 }
@@ -37070,6 +37232,28 @@ function loadPhonicsQuestState() {
   }
 }
 
+function normalizePhonicsRewards(value = {}) {
+  return {
+    smallStars: Math.max(0, Number(value.smallStars || 0)),
+    bigStars: Math.max(0, Number(value.bigStars || 0)),
+    awardedUnits: Array.isArray(value.awardedUnits) ? value.awardedUnits.map(Number).filter(Number.isFinite) : []
+  };
+}
+
+function loadPhonicsRewards() {
+  try {
+    return normalizePhonicsRewards(JSON.parse(localStorage.getItem("jojoPhonicsRewards") || "{}"));
+  } catch {
+    return normalizePhonicsRewards();
+  }
+}
+
+function persistPhonicsRewards() {
+  state.phonicsRewards = normalizePhonicsRewards(state.phonicsRewards);
+  localStorage.setItem("jojoPhonicsRewards", JSON.stringify(state.phonicsRewards));
+  saveSharedState({ phonicsRewards: state.phonicsRewards });
+}
+
 function savePhonicsQuestState() {
   localStorage.setItem("jojoPhonicsQuestState", JSON.stringify(state.phonicsQuest));
   saveSharedState({ phonicsQuest: state.phonicsQuest });
@@ -37085,8 +37269,9 @@ function renderPhonics() {
   $("#phonicsQuestGoal").textContent = unit.goal;
   $("#phonicsStarCount").textContent = state.phonicsQuest.stars;
   $("#phonicsStarFill").style.width = `${Math.min(100, (state.phonicsQuest.stars / 30) * 100)}%`;
-  $("#phonicsChallengeStatus").textContent = state.phonicsQuest.stars >= 30 ? "可以挑战" : `还需要 ${30 - state.phonicsQuest.stars} stars`;
+  $("#phonicsChallengeStatus").textContent = state.phonicsQuest.stars >= 30 ? "可以挑战" : `还需要 ${30 - state.phonicsQuest.stars} 点`;
   $("#phonicsChallengeButton").disabled = state.phonicsQuest.stars < 30;
+  renderPhonicsRewards();
   renderPhonicsUnits();
   renderPhonicsListen();
   renderPhonicsFlash();
@@ -37224,7 +37409,7 @@ function awardPhonicsStars(amount) {
   savePhonicsQuestState();
   $("#phonicsStarCount").textContent = state.phonicsQuest.stars;
   $("#phonicsStarFill").style.width = `${Math.min(100, (state.phonicsQuest.stars / 30) * 100)}%`;
-  $("#phonicsChallengeStatus").textContent = state.phonicsQuest.stars >= 30 ? "可以挑战" : `还需要 ${30 - state.phonicsQuest.stars} stars`;
+  $("#phonicsChallengeStatus").textContent = state.phonicsQuest.stars >= 30 ? "可以挑战" : `还需要 ${30 - state.phonicsQuest.stars} 点`;
   $("#phonicsChallengeButton").disabled = state.phonicsQuest.stars < 30;
 }
 
@@ -37244,8 +37429,10 @@ function completePhonicsChallenge() {
   if (!ok) return;
   playCue("good");
   incrementPlayed();
-  if (!state.phonicsQuest.completed.includes(state.phonicsQuest.unitIndex)) {
+  const completedBefore = state.phonicsQuest.completed.includes(state.phonicsQuest.unitIndex);
+  if (!completedBefore) {
     state.phonicsQuest.completed.push(state.phonicsQuest.unitIndex);
+    awardPhonicsChallengeReward(state.phonicsQuest.unitIndex);
   }
   state.phonicsQuest.stars = Math.max(0, state.phonicsQuest.stars - 30);
   state.phonicsQuest.unlocked = Math.min(phonicsQuestUnits.length - 1, Math.max(state.phonicsQuest.unlocked, state.phonicsQuest.unitIndex + 1));
@@ -38822,7 +39009,9 @@ async function init() {
   $("#kanaScore").textContent = state.kanaScore;
   $("#playedCount").textContent = state.played;
   renderKanaProgress();
+  renderKanaRewards();
   renderWordRewards();
+  renderPhonicsRewards();
   $("#artDate").valueAsDate = new Date();
   installCustomWordBankLabels();
   syncWordBankSelect();

@@ -128,6 +128,12 @@
             </div>
             <div class="section-actions">
               <div class="score-pill">得分 <strong id="kanaScore">0</strong></div>
+              <div class="word-star-panel learning-star-panel" id="kanaStarPanel" aria-label="Kana Quest 星星奖励">
+                <div class="word-star-shelf">
+                  <div class="small-star-tray" id="kanaSmallStarTray" aria-label="Kana 小星星"></div>
+                  <div class="big-star-tray" id="kanaBigStarTray" aria-label="Kana 大星星"></div>
+                </div>
+              </div>
             </div>
           </div>
           <div class="tool-layout">
@@ -236,20 +242,26 @@
               <p class="section-subtitle" id="phonicsQuestGoal">按照声音意识、认音、拼读、听写、可解码阅读一路闯关。</p>
             </div>
             <div class="section-actions">
-              <div class="score-pill">Stars <strong id="phonicsStarCount">0</strong></div>
+              <div class="score-pill">闯关点 <strong id="phonicsStarCount">0</strong></div>
+              <div class="word-star-panel learning-star-panel" id="phonicsRewardPanel" aria-label="Phonics Quest 星星奖励">
+                <div class="word-star-shelf">
+                  <div class="small-star-tray" id="phonicsSmallStarTray" aria-label="Phonics 小星星"></div>
+                  <div class="big-star-tray" id="phonicsBigStarTray" aria-label="Phonics 大星星"></div>
+                </div>
+              </div>
             </div>
           </div>
           <div class="phonics-quest-shell">
             <aside class="phonics-unit-panel" aria-label="自然拼读单元">
               <div class="word-progress-head">
                 <strong id="phonicsUnitTitle">短元音起步</strong>
-                <span id="phonicsChallengeStatus">还需要 30 stars</span>
+                <span id="phonicsChallengeStatus">还需要 30 点</span>
               </div>
               <div class="phonics-star-track" aria-hidden="true">
                 <span id="phonicsStarFill"></span>
               </div>
               <div id="phonicsUnitList" class="phonics-unit-list"></div>
-              <button class="primary-btn" id="phonicsChallengeButton" type="button" disabled>30-Star Challenge</button>
+              <button class="primary-btn" id="phonicsChallengeButton" type="button" disabled>30 点挑战</button>
             </aside>
 
             <div class="phonics-quest-board" aria-label="自然拼读闯关">
@@ -503,11 +515,13 @@
               <option value="100">100 个</option>
             </select>
           </label>
-          <label class="settings-toggle">VO 跟读闯关
-            <span class="toggle-row">
-              <input id="wordRepeatVoEnabled" type="checkbox">
-              <span>看英文选中文答对后，必须跟读正确才能下一题。</span>
+          <label class="settings-toggle word-vo-toggle">
+            <span class="settings-toggle-copy">
+              <span class="settings-toggle-title">VO 跟读闯关</span>
+              <span class="settings-toggle-note">看英文选中文答对后，必须跟读正确才能下一题。</span>
             </span>
+            <input id="wordRepeatVoEnabled" type="checkbox">
+            <span class="settings-toggle-switch" aria-hidden="true"></span>
           </label>
         </div>
         <section class="settings-word-library" aria-labelledby="wordLibraryTitle">

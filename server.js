@@ -34,7 +34,9 @@ const defaultState = {
   deletedWordBanks: [],
   songHistory: [],
   kanaProgress: {},
+  kanaRewards: { smallStars: 0, bigStars: 0, masteryCredits: 0, awardedKeys: [] },
   phonicsQuest: { unitIndex: 0, unlocked: 0, stars: 0, completed: [], stepIndex: 0, listenIndex: 0, flashIndex: 0, blendIndex: 0, spellIndex: 0, spelling: [] },
+  phonicsRewards: { smallStars: 0, bigStars: 0, awardedUnits: [] },
   cardCottage: { assignments: [], revealed: [], slots: [], defaultSlotsSeeded: false, totalCards: 50 },
   appSettings: { wordRepeatVoEnabled: false },
   kanaScore: 0,
@@ -67,6 +69,9 @@ function readState() {
     if (state.wordBank !== "all" && state.wordBank !== "ket-official" && !customBankIds.has(state.wordBank)) {
       state.wordBank = "ket-official";
     }
+    state.wordRewards = { ...defaultState.wordRewards, ...(state.wordRewards || {}) };
+    state.kanaRewards = { ...defaultState.kanaRewards, ...(state.kanaRewards || {}) };
+    state.phonicsRewards = { ...defaultState.phonicsRewards, ...(state.phonicsRewards || {}) };
     state.aiSettings = { ...defaultState.aiSettings, ...(state.aiSettings || {}), model: "MiniMax-M3", customModel: "" };
     return state;
   } catch {
@@ -99,7 +104,7 @@ function mergeStatePatch(patch) {
       }
     });
   }
-  ["wordProgress", "wordRewards", "dailyWordPlan", "gallery", "deletedWordBanks", "customWordBanks", "songHistory", "kanaProgress", "phonicsQuest", "cardCottage", "appSettings"].forEach((key) => {
+  ["wordProgress", "wordRewards", "dailyWordPlan", "gallery", "deletedWordBanks", "customWordBanks", "songHistory", "kanaProgress", "kanaRewards", "phonicsQuest", "phonicsRewards", "cardCottage", "appSettings"].forEach((key) => {
     if (key in patch) next[key] = patch[key];
   });
   ["wordBank", "dailyWordCount", "kanaScore", "played", "artMode"].forEach((key) => {

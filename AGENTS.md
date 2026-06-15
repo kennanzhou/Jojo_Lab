@@ -73,12 +73,22 @@ Primary use cases:
 - Kana Quest should use a Word Camp-style mastery progress panel.
 - The progress panel covers all kana because the total set is fixed; do not add range or daily quantity controls to Kana Quest.
 - Track hiragana and katakana separately while keeping the UI simple for parent-child practice.
+- Kana Quest has its own reward bucket, separate from Word Camp/Card Cottage rewards. Award 1 small star only after 2 newly mastered kana; exchange 12 small stars for 1 big star. This makes kana rewards slower than Word Camp because kana questions are shorter.
+
+## Phonics Quest Specifics
+
+- Phonics Quest has two reward concepts: challenge points for unlocking unit challenges, and its own small/big star reward bucket. Keep the labels visually distinct.
+- Completing a 30-point unit challenge for the first time awards 2 small stars; exchange 6 small stars for 1 big star. Replaying already completed units should not duplicate reward stars.
+- Phonics rewards should feel comparable to Word Camp effort: harder than a few tap-through drills, but not so slow that a child cannot earn visible progress in a short session.
 
 ## Word Camp Specifics
 
 - In "看英文选中文" mode, the optional VO follow-up setting means: play the official pronunciation at the start of each question; after the child picks the correct Chinese meaning, require the child to repeat the English word; advance only after speech recognition matches the word.
 - If the child says it wrong or the app cannot hear clearly, play the official pronunciation again and ask for another repeat.
 - The VO flow should not shrink buttons or crowd the exercise surface. Use clear feedback text and keep the main answer choices large.
+- The VO follow-up setting should feel like part of the Word Camp settings form, not a separate bulky callout.
+- In "看中文拼单词" mode, missing letters should avoid adjacent gaps whenever the word length allows it.
+- Word Camp settings should edit mastery levels with compact level buttons, not a select menu; keep these rows low and comfortable for scanning.
 - Word Camp owns daily word count, VO follow-up, word bank import, word bank switching, word mastery edits, and star reset settings.
 
 ## Card Cottage Specifics
