@@ -259,18 +259,19 @@ function quoteCurlConfig(value) {
   return `"${String(value).replace(/\\/g, "\\\\").replace(/"/g, "\\\"").replace(/\r/g, "\\r").replace(/\n/g, "\\n")}"`;
 }
 
-function curlPostJson(endpoint, apiKey, payload) {
+function curlPostJson(endpoint, apiKey, payload, options = {}) {
   ensureDataDir();
   const token = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const bodyPath = path.join(dataDir, `minimax-body-${token}.json`);
   const configPath = path.join(dataDir, `minimax-curl-${token}.conf`);
   const marker = "\n__JOJO_HTTP_STATUS__:";
+  const maxTime = Number(options.timeoutSeconds || process.env.MINIMAX_CURL_TIMEOUT_SECONDS || 45);
   fs.writeFileSync(bodyPath, JSON.stringify(payload), { mode: 0o600 });
   fs.writeFileSync(configPath, [
     "silent",
     "show-error",
     "location",
-    "max-time = 90",
+    `max-time = ${maxTime}`,
     "request = \"POST\"",
     `url = ${quoteCurlConfig(endpoint)}`,
     "header = \"Content-Type: application/json\"",
@@ -298,9 +299,10 @@ function curlPostJson(endpoint, apiKey, payload) {
   });
 }
 
-async function postMinimaxJson(endpoint, apiKey, payload) {
+async function postMinimaxJson(endpoint, apiKey, payload, options = {}) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), Number(process.env.MINIMAX_FETCH_TIMEOUT_MS || 12000));
+  const fetchTimeoutMs = Number(options.fetchTimeoutMs || process.env.MINIMAX_FETCH_TIMEOUT_MS || 45000);
+  const timeout = setTimeout(() => controller.abort(), fetchTimeoutMs);
   try {
     const response = await fetch(endpoint, {
       method: "POST",
@@ -313,17 +315,71 @@ async function postMinimaxJson(endpoint, apiKey, payload) {
     });
     return { ok: response.ok, status: response.status, text: await response.text(), source: "fetch" };
   } catch (error) {
+    const message = error.cause?.message || error.message;
+    const timedOut = error.name === "AbortError" || /aborted|timed? out|timeout/i.test(message);
+    if (timedOut && options.retryCurlOnFetchTimeout === false) {
+      throw new Error(`请求超过 ${Math.round(fetchTimeoutMs / 1000)} 秒仍未返回`);
+    }
     try {
-      const curlResponse = await curlPostJson(endpoint, apiKey, payload);
-      curlResponse.fetchError = error.cause?.message || error.message;
+      const curlResponse = await curlPostJson(endpoint, apiKey, payload, { timeoutSeconds: options.curlTimeoutSeconds });
+      curlResponse.fetchError = message;
       return curlResponse;
     } catch (curlError) {
-      throw new Error(`fetch: ${error.cause?.message || error.message}; curl: ${curlError.message}`);
+      throw new Error(`fetch: ${message}; curl: ${curlError.message}`);
     }
   }
   finally {
     clearTimeout(timeout);
   }
+}
+
+function isSongAnalysisTask(task) {
+  return String(task || "").startsWith("song-analysis");
+}
+
+function isSongCandidateTask(task) {
+  return String(task || "").startsWith("song-candidates");
+}
+
+function minimaxRequestOptions(task) {
+  if (isSongAnalysisTask(task)) {
+    return { fetchTimeoutMs: 180000, curlTimeoutSeconds: 180, retryCurlOnFetchTimeout: false };
+  }
+  if (isSongCandidateTask(task)) {
+    return { fetchTimeoutMs: 60000, curlTimeoutSeconds: 60 };
+  }
+  return { fetchTimeoutMs: 45000, curlTimeoutSeconds: 45 };
+}
+
+function minimaxMaxTokens(task, requested) {
+  if (requested) return requested;
+  if (isSongAnalysisTask(task)) return 6144;
+  if (isSongCandidateTask(task)) return 2048;
+  return 4096;
+}
+
+function isMinimaxAuthFailure(value) {
+  return /HTTP 40[13]|authorized_error|invalid api key|API secret key|status_code["']?\s*:\s*1004|2049|鉴权|API Key/i.test(value);
+}
+
+function isMinimaxTimeoutFailure(value) {
+  return /timed out|timeout|aborted|请求超过|Operation was aborted|超时/i.test(value);
+}
+
+function buildMinimaxFailureMessage(failures, task) {
+  const detail = failures.map((failure) => failure.message).join("；");
+  const hasAuthFailure = failures.some((failure) => failure.status === 401 || failure.status === 403 || isMinimaxAuthFailure(failure.message));
+  const hasTimeoutFailure = failures.some((failure) => isMinimaxTimeoutFailure(failure.message));
+  if (hasAuthFailure && !hasTimeoutFailure) {
+    return `MiniMax 鉴权失败：${detail}。请在主页齿轮重新保存与当前端点匹配的 API Key。`;
+  }
+  if (hasTimeoutFailure && isSongAnalysisTask(task)) {
+    return `MiniMax 歌曲分析超时：${detail}。当前 Key 和端点可能可用，但整首歌分析请求较重；请稍后重试，或先选择较浅解释深度。`;
+  }
+  if (hasAuthFailure && hasTimeoutFailure) {
+    return `MiniMax 没有完成：${detail}。401/authorized_error 表示某个端点不接受当前 Key；timeout/aborted 表示另一个端点长时间没有返回。请确认主页齿轮里的 endpoint 与 API Key 属于同一个 MiniMax 控制台。`;
+  }
+  return `MiniMax 请求失败：${detail}。如果浏览器能联网但这里失败，通常是 Node 本机服务没有走系统代理/VPN，或当前 Key 只支持其中一个 MiniMax 域名。`;
 }
 
 async function proxyMinimax(body) {
@@ -332,6 +388,7 @@ async function proxyMinimax(body) {
   const endpoint = body.endpoint || saved.endpoint || defaultState.aiSettings.endpoint;
   const model = "MiniMax-M3";
   const apiKey = body.apiKey || saved.apiKey;
+  const task = body.task || "";
   if (!apiKey) throw new Error("MiniMax API Key 尚未保存在本机服务端。");
 
   const payload = body.messages ? body : {
@@ -340,7 +397,7 @@ async function proxyMinimax(body) {
     temperature: 0.2,
     top_p: 0.95,
     stream: false,
-    max_tokens: body.max_tokens || 8192
+    max_tokens: minimaxMaxTokens(task, body.max_tokens)
   };
 
   if (mode === "minimax-v2" && !("tokens_to_generate" in payload)) {
@@ -348,29 +405,34 @@ async function proxyMinimax(body) {
     delete payload.max_tokens;
   }
 
+  const shouldTryOfficialAlternates = process.env.MINIMAX_TRY_ALTERNATE_ENDPOINTS === "1" && mode === "minimax-openai";
   const endpoints = [...new Set([
     endpoint,
-    mode === "minimax-openai" ? "https://api.minimax.chat/v1/chat/completions" : "",
-    mode === "minimax-openai" ? "https://api.minimax.io/v1/chat/completions" : ""
+    shouldTryOfficialAlternates ? "https://api.minimax.chat/v1/chat/completions" : "",
+    shouldTryOfficialAlternates ? "https://api.minimax.io/v1/chat/completions" : ""
   ].filter(Boolean))];
   const failures = [];
+  const requestOptions = minimaxRequestOptions(task);
   let response;
   let usedEndpoint = endpoint;
   for (const candidateEndpoint of endpoints) {
     try {
-      const candidateResponse = await postMinimaxJson(candidateEndpoint, apiKey, payload);
+      const candidateResponse = await postMinimaxJson(candidateEndpoint, apiKey, payload, requestOptions);
       if (candidateResponse.ok) {
         response = candidateResponse;
         usedEndpoint = candidateEndpoint;
         break;
       }
-      failures.push(`${candidateEndpoint}: HTTP ${candidateResponse.status} (${candidateResponse.source || "fetch"}): ${candidateResponse.text.slice(0, 240)}`);
+      failures.push({
+        status: candidateResponse.status,
+        message: `${candidateEndpoint}: HTTP ${candidateResponse.status} (${candidateResponse.source || "fetch"}): ${candidateResponse.text.slice(0, 240)}`
+      });
     } catch (error) {
-      failures.push(`${candidateEndpoint}: ${error.cause?.message || error.message}`);
+      failures.push({ message: `${candidateEndpoint}: ${error.cause?.message || error.message}` });
     }
   }
   if (!response) {
-    throw new Error(`MiniMax 请求失败：${failures.join("；")}。如果浏览器能联网但这里失败，通常是 Node 本机服务没有走系统代理/VPN，或当前 Key 只支持其中一个 MiniMax 域名。`);
+    throw new Error(buildMinimaxFailureMessage(failures, task));
   }
   const text = response.text;
   if (!response.ok) throw new Error(`MiniMax 返回 ${response.status} (${usedEndpoint}, ${response.source || "fetch"}): ${text.slice(0, 300)}`);

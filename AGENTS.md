@@ -61,7 +61,14 @@ Primary use cases:
 
 - "歌曲线索", "歌曲名", and "歌手 / 来源" belong together as one "歌曲信息" window.
 - The MiniMax workflow should make real API errors visible. Do not show "没有找到明确候选" when the model returned an error such as invalid key, quota, model, or endpoint failure.
+- Song Notes should distinguish MiniMax auth/key errors from long-request timeouts and network/proxy failures; do not collapse 401 invalid-key errors into generic VPN guidance.
 - Successful song analyses must persist. A refreshed page should restore the latest analysis and expose recent analyzed songs in the Song Notes workflow.
+- Song Notes should restore the latest analyzed song when opened, and the left panel bottom should provide a full analyzed-song history selector.
+- When a new Song Notes analysis starts, the right panel should immediately switch to the new song title and show a friendly progress state instead of leaving the previous analysis visible.
+- When Song Notes analysis starts, candidate search cards must disappear completely; do not leave them above, behind, or visually competing with the analysis progress/results.
+- Song Notes candidate search should also switch the right panel to the new song information and show the same friendly progress state instead of leaving the previous analysis visible.
+- Song Notes candidate search and analysis are competing async workflows; stale responses from an older search or analysis must not repaint the current UI.
+- If MiniMax returns non-JSON content for Song Notes, retry with a compact strict-JSON prompt; if that still fails, show a temporary learning card for the new song instead of reverting to the previous song or an empty error-only state.
 - The app must not auto-generate, scrape, or display full commercial lyrics. Users should paste lyrics they own, are authorized to use, or can reasonably use for private study.
 - Song Notes vocabulary extraction must include every unique meaningful English word that appears in the user-provided lyrics, including simple image/action words, repeated chorus words, and inflected surface forms. Do not skip words like sun/day/run just because they are easy.
 - Ultra-basic function words should not become standalone vocabulary entries, including articles, common conjunctions, be-verbs, basic pronouns, common prepositions, auxiliaries, and filler interjections such as a/an/the/and/is/to/of/in/with/from/that/I/you/will/oh. If these words appear inside a fixed phrase, keep the phrase entry but do not add the function word alone.
@@ -88,6 +95,7 @@ Primary use cases:
 - The VO flow should not shrink buttons or crowd the exercise surface. Use clear feedback text and keep the main answer choices large.
 - The VO follow-up setting should feel like part of the Word Camp settings form, not a separate bulky callout.
 - In "看中文拼单词" mode, missing letters should avoid adjacent gaps whenever the word length allows it.
+- In "看中文拼单词" mode, keep the word card size/proportion consistent with the other Word Camp modes; only the Chinese meaning text should use a smaller wrapping prompt style so long meanings never spill out of the card.
 - Word Camp settings should edit mastery levels with compact level buttons, not a select menu; keep these rows low and comfortable for scanning.
 - Word Camp owns daily word count, VO follow-up, word bank import, word bank switching, word mastery edits, and star reset settings.
 

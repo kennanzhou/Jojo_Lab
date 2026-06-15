@@ -570,25 +570,30 @@ textarea {
 .keyboard-row {
   display: flex;
   justify-content: center;
-  gap: 7px;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
 }
 
 .keyboard-row button {
-  min-width: clamp(38px, 5.4vw, 66px);
-  min-height: clamp(42px, 5.8vw, 70px);
+  flex: 1 1 0;
+  max-width: 66px;
+  min-width: 0;
+  min-height: 58px;
   border: 2px solid var(--retro-red);
   border-radius: var(--retro-radius-sm);
   background: #fff8df;
   color: var(--retro-red);
-  font-size: clamp(24px, 3.8vw, 42px);
+  font-size: 30px;
   font-weight: 900;
   text-transform: uppercase;
   box-shadow: 4px 4px 0 rgba(111, 51, 40, 0.15);
 }
 
 .keyboard-tools button {
-  min-width: clamp(92px, 11vw, 140px);
-  font-size: clamp(20px, 2.5vw, 30px);
+  flex: 0 1 140px;
+  max-width: 140px;
+  font-size: 24px;
 }
 
 .settings-panel .danger-btn {
@@ -790,6 +795,57 @@ textarea {
   border-radius: 8px;
   background: #fff;
   padding: 16px;
+}
+
+.song-progress-card {
+  display: grid;
+  gap: 12px;
+  border: 2px solid rgba(201, 74, 46, 0.3);
+  background: #fff8df;
+}
+
+.song-progress-card > strong {
+  color: var(--retro-red);
+  font-size: 26px;
+}
+
+.song-progress-track {
+  position: relative;
+  overflow: hidden;
+  height: 18px;
+  border: 2px solid rgba(111, 51, 40, 0.28);
+  border-radius: 999px;
+  background: #fffdf2;
+}
+
+.song-progress-fill {
+  position: absolute;
+  inset: 2px auto 2px 2px;
+  width: 44%;
+  border-radius: 999px;
+  background: var(--retro-red);
+  animation: song-progress-pulse 1.45s ease-in-out infinite;
+}
+
+.song-progress-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 800;
+  text-align: center;
+}
+
+@keyframes song-progress-pulse {
+  0%,
+  100% {
+    width: 34%;
+  }
+
+  50% {
+    width: 72%;
+  }
 }
 
 .song-line-head {
@@ -4192,6 +4248,7 @@ main {
 #words .word-card {
   display: flex !important;
   align-items: center !important;
+  --word-prompt-slot-height: clamp(63px, 6.99vw, 99px);
   min-height: 150px !important;
   padding: 20px 28px 22px !important;
 }
@@ -4224,6 +4281,7 @@ main {
 
 @media (min-width: 760px) and (max-height: 820px) {
   #words .word-card {
+    --word-prompt-slot-height: clamp(53px, 6.08vw, 81px);
     min-height: 126px !important;
     padding: 16px 24px 18px !important;
   }
@@ -4235,6 +4293,65 @@ main {
   #words #wordMeta {
     margin-top: 8px !important;
     font-size: 18px;
+  }
+}
+
+#words .word-card.word-card-spelling > div {
+  min-width: 0;
+}
+
+#words .word-card.word-card-spelling {
+  min-height: 220px !important;
+}
+
+#words .word-card.word-card-spelling #wordPrompt {
+  display: grid;
+  align-content: center;
+  min-height: var(--word-prompt-slot-height);
+  font-size: 34px !important;
+  line-height: 1.18;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+#words .word-card.word-card-spelling #wordMeta {
+  margin-top: 6px !important;
+}
+
+@media (min-width: 760px) and (max-height: 820px) {
+  #words .word-card.word-card-spelling {
+    min-height: 199px !important;
+  }
+}
+
+@media (min-width: 760px) and (max-width: 1180px) and (max-height: 820px) {
+  #words .word-card.word-card-spelling {
+    min-height: 184px !important;
+  }
+}
+
+@media (max-width: 760px) {
+  #words .word-card.word-card-spelling {
+    min-height: 150px !important;
+  }
+
+  #words .word-card.word-card-spelling #wordPrompt {
+    font-size: 28px !important;
+    line-height: 1.2;
+  }
+
+  #words .keyboard-row {
+    gap: 4px;
+  }
+
+  #words .keyboard-row button {
+    min-height: 50px;
+    font-size: 22px;
+  }
+
+  #words .keyboard-tools button {
+    font-size: 20px;
   }
 }
 
@@ -5765,6 +5882,11 @@ main,
 .song-history-panel {
   display: grid;
   gap: 7px;
+  margin-top: auto;
+  border: 2px solid rgba(201, 74, 46, 0.24);
+  border-radius: 8px;
+  background: rgba(255, 248, 223, 0.72);
+  padding: 10px;
 }
 
 .song-history-panel:empty {
@@ -5786,6 +5908,16 @@ main,
   font-size: 13px;
 }
 
+.song-history-select-label {
+  gap: 5px;
+  font-size: 15px;
+}
+
+.song-history-select-label select {
+  min-height: 50px;
+  font-size: 16px;
+}
+
 .song-history-list {
   display: grid;
   gap: 6px;
@@ -5794,12 +5926,17 @@ main,
 .song-history-item {
   display: grid;
   gap: 2px;
-  min-height: 54px;
+  min-height: 50px;
   border: 2px solid rgba(201, 74, 46, 0.24);
   border-radius: 8px;
   background: #fffdf2;
   padding: 8px 10px;
   text-align: left;
+}
+
+.song-history-item.active {
+  border-color: var(--retro-red);
+  background: #fff3c5;
 }
 
 .song-history-item strong {

@@ -35398,6 +35398,8 @@ const state = {
   songCandidates: [],
   selectedSong: null,
   songAnalysis: null,
+  activeSongHistoryId: "",
+  songWorkflowVersion: 0,
   songHistory: loadSongHistory()
 };
 
@@ -36146,8 +36148,34 @@ function makeSongHistoryEntry(analysis, payload) {
 
 function persistSongAnalysis(analysis, payload) {
   const entry = makeSongHistoryEntry(analysis, payload);
+  state.activeSongHistoryId = entry.id;
   state.songHistory = [entry, ...state.songHistory.filter((item) => item.id !== entry.id)].slice(0, 20);
   saveSongHistory();
+}
+
+function songTitleFromPayload(payload) {
+  return payload.title || payload.selectedSong?.title || payload.query || "新歌曲";
+}
+
+function songArtistFromPayload(payload) {
+  return payload.artist || payload.selectedSong?.artist || "";
+}
+
+function beginSongWorkflow({ clearSelectedSong = false } = {}) {
+  state.songWorkflowVersion += 1;
+  clearSongCandidates({ clearSelectedSong });
+  return state.songWorkflowVersion;
+}
+
+function isCurrentSongWorkflow(version) {
+  return version === state.songWorkflowVersion;
+}
+
+function clearSongCandidates({ clearSelectedSong = false } = {}) {
+  state.songCandidates = [];
+  if (clearSelectedSong) state.selectedSong = null;
+  const candidateContainer = $("#songCandidates");
+  if (candidateContainer) candidateContainer.innerHTML = "";
 }
 
 function normalizeImportedWord(raw, bankId, index, zhPool) {
@@ -37026,6 +37054,12 @@ function pickSpellingGapPositions(letters, count) {
   return sample(best, 1)[0].positions;
 }
 
+function setWordCardMode(mode) {
+  const card = $("#words .word-card");
+  if (!card) return;
+  card.classList.toggle("word-card-spelling", mode === "spelling");
+}
+
 function buildSpellingPuzzle(word) {
   const letters = (word.spelling || word.word).toLowerCase().replace(/[^a-z]/g, "").split("");
   const count = Math.min(spellingGapCount(letters.join("")), letters.length);
@@ -37089,6 +37123,7 @@ function newWordQuestion() {
     const first = bankWords[0] || allWords()[0];
     const allMastered = bankWords.length > 0 && bankWords.every((word) => isWordMastered(word));
     state.word = first;
+    setWordCardMode("status");
     $("#wordPrompt").textContent = todayWords.length ? "今日完成" : "完成";
     $("#wordMeta").textContent = `${wordBankLabels[currentWordBank()] || "词库"} · ${todayWords.length ? "今日任务" : "已掌握"}`;
     $("#wordExample").textContent = todayWords.length
@@ -37104,6 +37139,7 @@ function newWordQuestion() {
   const word = sample(pool, 1)[0];
   const mode = $("#wordMode").value;
   state.word = word;
+  setWordCardMode(mode);
   $("#wordMeta").textContent = `${word.ipa} · ${word.pos} · ${word.accent || "US"} · ${word.banks.join(" / ")}`;
   $("#wordExample").textContent = word.example;
   $("#wordFeedback").textContent = "";
@@ -37619,6 +37655,101 @@ function buildSongPrompt(payload) {
 歌曲资料：${JSON.stringify(payload, null, 2)}`;
 }
 
+function buildCompactSongPrompt(payload) {
+  return `你是 Song Notes 的英文歌学习助手。上一次输出没有被程序解析，请这次只输出一个严格 JSON 对象。
+重要规则：
+- 第一字符必须是 {，最后一个字符必须是 }。
+- 不要 Markdown、不要代码围栏、不要 <think>、不要解释。
+- 不要补写、续写或改写歌词；lines.en 只能使用用户提供的 lyrics 原句。
+- vocabulary 要覆盖歌词中有语义价值的唯一英文词；跳过 a/an/the/and/or/but/is/am/are/to/of/in/on/at/for/with/from/by/as/that/i/you/will/oh 等超基础功能词。
+
+输出格式必须是：
+{
+  "title": "歌曲名",
+  "artist": "歌手或来源",
+  "intro": { "quick": "一句话介绍", "guided": "亲子陪读介绍", "deep": "背景或风格补充" },
+  "interpretation": { "child": "孩子版整体解释", "parent": "家长陪读版", "deep": "语言和文化解释" },
+  "lyricsReview": { "status": "ok", "summary": "歌词格式简短校对", "issues": [] },
+  "lines": [
+    { "en": "用户提供的原句", "zh": "自然中文翻译", "explanation": "给孩子听得懂的解释", "words": [], "parentQuestion": "一个陪读问题" }
+  ],
+  "vocabulary": [
+    { "word": "英文词或短语", "surfaceForms": ["出现形式"], "zh": "中文释义", "ipa": "待补充", "pos": "word", "isPhrase": false, "isSlang": false, "slangNote": "", "meaningInSong": "歌中意思", "example": "A new short sentence.", "sourceLines": [1], "distractors": ["干扰项1", "干扰项2", "干扰项3"] }
+  ]
+}
+
+歌曲资料：${JSON.stringify({
+    title: payload.title,
+    artist: payload.artist,
+    selectedSong: payload.selectedSong,
+    depth: payload.depth,
+    lyrics: payload.lyrics
+  }, null, 2)}`;
+}
+
+const songFallbackStopwords = new Set("a an the and or but is am are was were be been being to of in on at for with from by as that this these those i me my mine you your yours he him his she her hers it its we us our they them their will would can could should may might must do does did have has had not no yes oh o".split(" "));
+
+function fallbackSongVocabulary(payload) {
+  const seen = new Map();
+  payload.lyrics.forEach((line, lineIndex) => {
+    String(line).toLowerCase().match(/[a-z][a-z'-]*/g)?.forEach((raw) => {
+      const word = raw.replace(/^'+|'+$/g, "");
+      if (!word || songFallbackStopwords.has(word)) return;
+      const current = seen.get(word) || { word, surfaceForms: new Set(), sourceLines: new Set() };
+      current.surfaceForms.add(raw);
+      current.sourceLines.add(lineIndex + 1);
+      seen.set(word, current);
+    });
+  });
+  return Array.from(seen.values()).slice(0, 80).map((item) => ({
+    word: item.word,
+    surfaceForms: Array.from(item.surfaceForms),
+    zh: "待补充",
+    ipa: "待补充",
+    pos: "word",
+    isPhrase: false,
+    isSlang: false,
+    slangNote: "",
+    meaningInSong: "MiniMax 返回非结构化内容，暂待补充",
+    example: `I can read the word ${item.word}.`,
+    sourceLines: Array.from(item.sourceLines),
+    distractors: ["待补充", "动作", "画面"]
+  }));
+}
+
+function buildFallbackSongAnalysis(payload, reason) {
+  const title = songTitleFromPayload(payload);
+  const artist = songArtistFromPayload(payload);
+  return {
+    title,
+    artist,
+    isFallbackDraft: true,
+    intro: {
+      quick: "MiniMax 返回了非结构化内容，已先保留一张临时学习卡。",
+      guided: "这张卡先保存歌曲信息和原句，方便稍后重新分析。",
+      deep: reason
+    },
+    interpretation: {
+      child: "先把歌词按句子放好，等 MiniMax 成功返回 JSON 后再补充完整解释。",
+      parent: "可以稍后重试分析，或减少歌词量/选择较浅解释深度。",
+      deep: "当前不是歌词内容问题，而是模型输出没有形成可解析 JSON。"
+    },
+    lyricsReview: {
+      status: "needs_attention",
+      summary: "模型没有返回结构化分析；原句已保留，未改写歌词。",
+      issues: []
+    },
+    lines: payload.lyrics.map((line) => ({
+      en: line,
+      zh: "等待 MiniMax 补充翻译",
+      explanation: "这句先保留原文；稍后重新分析后会补充亲子讲解。",
+      words: [],
+      parentQuestion: "这句里你认识哪个英文词？"
+    })),
+    vocabulary: fallbackSongVocabulary(payload)
+  };
+}
+
 function buildArtPrompt(art) {
   return `你是儿童艺术启发老师。请严格输出 JSON，不要输出 Markdown。
 输出格式：
@@ -37874,6 +38005,22 @@ async function callAiJson(task, prompt, payload = {}) {
   try {
     return parseJsonText(aiText);
   } catch (parseError) {
+    if (task === "song-analysis") {
+      let compactText = "";
+      try {
+        const compact = await postPrompt(buildCompactSongPrompt(payload), "song-analysis-compact", payload);
+        compactText = extractAiText(compact);
+        return parseJsonText(compactText);
+      } catch (compactError) {
+        if (compactText) {
+          try {
+            const compactRepairPrompt = `请把下面内容修复为严格 JSON 对象，只输出 JSON，不要 Markdown。必须保留 Song Notes schema，不要新增或补写歌词。\n\n${compactText.slice(0, 12000)}`;
+            const compactRepaired = await postPrompt(compactRepairPrompt, "song-analysis-compact-json-repair", payload);
+            return parseJsonText(extractAiText(compactRepaired));
+          } catch {}
+        }
+      }
+    }
     const repairPrompt = `你刚才返回的内容不是合法 JSON。请把下面内容修复为一个严格 JSON 对象，只输出 JSON，不要 Markdown、解释、注释或尾随逗号。不要新增歌词，不要补写歌词；保留原有分析信息和 schema。\n\n原始 schema 和要求：\n${prompt}\n\n需要修复的模型返回：\n${aiText.slice(0, 24000)}`;
     const repaired = await postPrompt(repairPrompt, `${task}-json-repair`, { task });
     try {
@@ -37887,25 +38034,42 @@ async function callAiJson(task, prompt, payload = {}) {
 function renderSongHistory() {
   const container = $("#songHistoryPanel");
   if (!container) return;
-  const history = state.songHistory.filter((item) => item?.analysis).slice(0, 6);
+  const history = state.songHistory.filter((item) => item?.analysis);
   if (!history.length) {
     container.innerHTML = "";
     return;
   }
+  const activeIndex = Math.max(0, history.findIndex((item) => item.id === state.activeSongHistoryId));
+  const recent = history.slice(0, 4);
   container.innerHTML = `
     <div class="song-history-head">
-      <strong>已分析歌曲</strong>
+      <strong>历史歌曲</strong>
       <span>${state.songHistory.length} 首</span>
     </div>
+    <label class="song-history-select-label">选择已分析歌曲
+      <select id="songHistorySelect">
+        ${history.map((item, index) => `
+          <option value="${index}"${index === activeIndex ? " selected" : ""}>
+            ${escapeHtml([item.title || "Song Notes", item.artist, formatSongHistoryDate(item.analyzedAt)].filter(Boolean).join(" · "))}
+          </option>
+        `).join("")}
+      </select>
+    </label>
     <div class="song-history-list">
-      ${history.map((item, index) => `
-        <button class="song-history-item" type="button" data-song-history-index="${index}">
+      ${recent.map((item) => {
+        const index = history.findIndex((entry) => entry.id === item.id);
+        return `
+        <button class="song-history-item${item.id === state.activeSongHistoryId ? " active" : ""}" type="button" data-song-history-index="${index}">
           <strong>${escapeHtml(item.title || "Song Notes")}</strong>
           <span>${escapeHtml([item.artist, formatSongHistoryDate(item.analyzedAt)].filter(Boolean).join(" · "))}</span>
         </button>
-      `).join("")}
+      `;
+      }).join("")}
     </div>
   `;
+  $("#songHistorySelect")?.addEventListener("change", (event) => {
+    restoreSongHistory(Number(event.target.value));
+  });
   $all(".song-history-item").forEach((button) => {
     button.addEventListener("click", () => restoreSongHistory(Number(button.dataset.songHistoryIndex)));
   });
@@ -37919,8 +38083,11 @@ function formatSongHistoryDate(value) {
 }
 
 function restoreSongHistory(index) {
-  const entry = state.songHistory[index];
+  const history = state.songHistory.filter((item) => item?.analysis);
+  const entry = history[index];
   if (!entry?.analysis) return;
+  beginSongWorkflow();
+  state.activeSongHistoryId = entry.id;
   state.selectedSong = entry.selectedSong || null;
   $("#songQuery").value = entry.query || "";
   $("#songTitle").value = entry.title || "";
@@ -37929,7 +38096,6 @@ function restoreSongHistory(index) {
   $("#songLyrics").value = Array.isArray(entry.lyrics) ? entry.lyrics.join("\n") : "";
   $("#songStatus").textContent = "已恢复保存的歌曲分析。";
   $("#songStatus").className = "feedback good";
-  renderSongCandidates([]);
   renderSongAnalysis(entry.analysis);
   renderSongHistory();
 }
@@ -37937,13 +38103,61 @@ function restoreSongHistory(index) {
 function renderSongEmpty() {
   $("#songStatus").textContent = "";
   $("#songStatus").className = "feedback";
-  $("#songCandidates").innerHTML = "";
+  clearSongCandidates({ clearSelectedSong: true });
   $("#addSongWordBank").disabled = true;
   renderSongHistory();
   $("#songLines").innerHTML = `
     <article class="song-line-card">
       <strong class="lyric-line">先输入歌曲线索，或直接粘贴歌词</strong>
       <p class="translation-line">可以先让 MiniMax-M3 给出候选歌曲；选中后粘贴你拥有或授权使用的歌词，再生成介绍、逐句解释和 Word Camp 词库。</p>
+    </article>
+  `;
+}
+
+function renderSongAnalysisProgress(payload, stage = "正在分析歌曲", options = {}) {
+  const title = songTitleFromPayload(payload);
+  const artist = songArtistFromPayload(payload);
+  const lyricCount = Array.isArray(payload.lyrics) ? payload.lyrics.length : 0;
+  const metaSuffix = options.metaSuffix || "Song Notes 正在生成";
+  const detail = options.detail || "正在整理歌曲介绍、逐句解释和 Word Camp 词库。";
+  const steps = Array.isArray(options.steps) && options.steps.length
+    ? options.steps
+    : ["歌曲信息", "逐句解释", "词库候选"];
+  const lyricLabel = lyricCount ? `${lyricCount} 句歌词 · ` : "";
+  state.songAnalysis = null;
+  state.activeSongHistoryId = "";
+  $("#songStudyTitle").textContent = title;
+  $("#songStudyMeta").textContent = `${artist ? artist + " · " : ""}${lyricLabel}${metaSuffix}`;
+  $("#addSongWordBank").disabled = true;
+  clearSongCandidates({ clearSelectedSong: options.clearSelectedSong === true });
+  $("#songStatus").textContent = stage;
+  $("#songStatus").className = "feedback";
+  renderSongHistory();
+  $("#songLines").innerHTML = `
+    <article class="song-line-card song-progress-card" aria-live="polite">
+      <strong>${escapeHtml(title)}</strong>
+      <p class="translation-line">${escapeHtml(stage)}。${escapeHtml(detail)}</p>
+      <div class="song-progress-track" aria-hidden="true">
+        <span class="song-progress-fill"></span>
+      </div>
+      <div class="song-progress-steps">
+        ${steps.map((step) => `<span>${escapeHtml(step)}</span>`).join("")}
+      </div>
+    </article>
+  `;
+}
+
+function renderSongCandidateResult(payload, candidates, notice = "") {
+  const title = songTitleFromPayload(payload);
+  const artist = songArtistFromPayload(payload);
+  const found = candidates.length;
+  $("#songStudyTitle").textContent = title;
+  $("#songStudyMeta").textContent = `${artist ? artist + " · " : ""}${found ? `找到 ${found} 个候选` : "候选搜索未命中"}`;
+  $("#addSongWordBank").disabled = true;
+  $("#songLines").innerHTML = `
+    <article class="song-line-card">
+      <strong class="lyric-line">${found ? "选择候选歌曲" : "还没有明确候选"}</strong>
+      <p class="translation-line">${escapeHtml(found ? "请在上方候选卡片里选择正确歌曲，再粘贴你拥有或授权使用的歌词进行分析。" : (notice || "可以补充更多歌曲线索、歌名或歌手后再试一次。"))}</p>
     </article>
   `;
 }
@@ -38023,10 +38237,11 @@ function renderSongAnalysis(data) {
   const artist = data.artist || $("#songArtist").value.trim();
   const lines = Array.isArray(data.lines) ? data.lines : [];
   const vocabulary = Array.isArray(data.vocabulary) ? data.vocabulary : [];
+  const isFallbackDraft = Boolean(data.isFallbackDraft);
   state.songAnalysis = data;
   $("#songStudyTitle").textContent = title;
-  $("#songStudyMeta").textContent = `${artist ? artist + " · " : ""}${lines.length} 句 · ${vocabulary.length} 个词库候选`;
-  $("#addSongWordBank").disabled = vocabulary.length < minWordsPerBank;
+  $("#songStudyMeta").textContent = `${artist ? artist + " · " : ""}${lines.length} 句 · ${isFallbackDraft ? "临时学习卡" : `${vocabulary.length} 个词库候选`}`;
+  $("#addSongWordBank").disabled = isFallbackDraft || vocabulary.length < minWordsPerBank;
 
   if (!lines.length) {
     renderSongEmpty();
@@ -38036,6 +38251,9 @@ function renderSongAnalysis(data) {
   const intro = data.intro || {};
   const interpretation = data.interpretation || {};
   const insightHtml = [
+    isFallbackDraft ? renderSongInsightBlock("临时状态", [
+      { label: "说明", value: "MiniMax 没有返回可解析 JSON，系统先保留歌曲和逐句占位，方便你稍后重试。" }
+    ]) : "",
     renderLyricsReviewBlock(data.lyricsReview),
     renderSongInsightBlock("歌曲介绍", [
       { label: "一句话", value: intro.quick },
@@ -38101,16 +38319,23 @@ function renderSongPending(payload, errorMessage) {
   $("#songStudyTitle").textContent = payload.title || "英文歌精读";
   $("#songStudyMeta").textContent = `${payload.lyrics.length} 句歌词 · 分析未完成`;
   const detail = String(errorMessage || "");
-  const networkHint = /ENOTFOUND|network|网络连接失败|fetch failed|Could not resolve|DNS|代理|VPN/i.test(detail)
+  const authHint = /401|403|authorized_error|invalid api key|API secret key|1004|2049|鉴权|API Key/i.test(detail)
+    ? " 当前更像是 MiniMax API Key 与 endpoint 不匹配，或 Key 已失效；请在主页齿轮重新保存对应控制台生成的 Key。"
+    : "";
+  const timeoutHint = !authHint && /timed out|timeout|aborted|请求超过|Operation was aborted|超时/i.test(detail)
+    ? " 当前更像是整首歌分析请求耗时过长；可以稍后重试，或先选择较浅解释深度。"
+    : "";
+  const networkHint = !authHint && !timeoutHint && /ENOTFOUND|network|网络连接失败|fetch failed|Could not resolve|DNS|代理|VPN/i.test(detail)
     ? " 当前更像是本机服务到 MiniMax 的网络/DNS/代理问题，不是歌曲内容问题。请确认运行服务的 Terminal 能访问 MiniMax 域名，或让 Node/curl 走同一个代理/VPN。"
     : "";
-  $("#songStatus").textContent = (errorMessage || "MiniMax 分析没有完成。请检查主页齿轮里的 API Key、端点和额度后重试。") + networkHint;
+  const hint = authHint || timeoutHint || networkHint;
+  $("#songStatus").textContent = (errorMessage || "MiniMax 分析没有完成。请检查主页齿轮里的 API Key、端点和额度后重试。") + hint;
   $("#songStatus").className = "feedback bad";
   const songLabel = [payload.title || payload.selectedSong?.title, payload.artist || payload.selectedSong?.artist].filter(Boolean).join(" · ");
   $("#songLines").innerHTML = `
     <article class="song-line-card">
       <strong class="lyric-line">分析没有完成</strong>
-      <p class="translation-line">${escapeHtml((errorMessage || "MiniMax 暂时没有返回可用分析。") + networkHint)}</p>
+      <p class="translation-line">${escapeHtml((errorMessage || "MiniMax 暂时没有返回可用分析。") + hint)}</p>
       <p class="translation-line">已收到 ${payload.lyrics.length} 句歌词${songLabel ? ` · ${escapeHtml(songLabel)}` : ""}。请修正 API 或模型返回后重试。</p>
     </article>
   `;
@@ -38132,11 +38357,16 @@ async function requestSongCandidates() {
     $("#songStatus").className = "feedback bad";
     return;
   }
-  $("#songStatus").textContent = "正在让 MiniMax-M3 查找候选歌曲...";
-  $("#songStatus").className = "feedback";
-  $("#songCandidates").innerHTML = "";
+  const workflowVersion = beginSongWorkflow({ clearSelectedSong: true });
+  renderSongAnalysisProgress(payload, "正在搜索候选歌曲", {
+    detail: "正在根据歌曲线索匹配可能的歌名、歌手和来源。",
+    metaSuffix: "正在搜索候选",
+    steps: ["歌曲线索", "候选匹配", "等待选择"],
+    clearSelectedSong: true
+  });
   try {
     const data = await callAiJson("song-candidates", buildSongCandidatePrompt(payload), payload);
+    if (!isCurrentSongWorkflow(workflowVersion)) return;
     const candidates = Array.isArray(data.candidates) ? data.candidates.map((candidate, index) => ({
       id: slugifyWordBankId(candidate.id || `${candidate.title || "song"}-${candidate.artist || index}`),
       title: String(candidate.title || "").trim(),
@@ -38149,11 +38379,12 @@ async function requestSongCandidates() {
       searchHint: String(candidate.searchHint || "").trim(),
       lyricsAccessNote: String(candidate.lyricsAccessNote || "").trim()
     })).filter((candidate) => candidate.title) : [];
-    state.selectedSong = null;
     renderSongCandidates(candidates);
+    renderSongCandidateResult(payload, candidates, data.notice);
     $("#songStatus").textContent = candidates.length ? `找到 ${candidates.length} 个候选。请选择具体歌曲。` : (data.notice || "没有找到明确候选，请补充更多线索。");
     $("#songStatus").className = candidates.length ? "feedback good" : "feedback bad";
   } catch (error) {
+    if (!isCurrentSongWorkflow(workflowVersion)) return;
     $("#songStatus").textContent = `候选搜索失败：${error.message}`;
     $("#songStatus").className = "feedback bad";
   }
@@ -38230,16 +38461,26 @@ async function requestSongAnalysis() {
   }
 
   incrementPlayed();
-  $("#songStatus").textContent = "正在请求大模型分析...";
-  $("#songStatus").className = "feedback";
+  const workflowVersion = beginSongWorkflow({ clearSelectedSong: true });
+  renderSongAnalysisProgress(payload, "正在请求 MiniMax-M3 分析", { clearSelectedSong: true });
 
   try {
     const data = await callAiJson("song-analysis", buildSongPrompt(payload), payload);
+    if (!isCurrentSongWorkflow(workflowVersion)) return;
     $("#songStatus").textContent = "大模型分析完成。";
     $("#songStatus").className = "feedback good";
     renderSongAnalysis(data);
     persistSongAnalysis(data, payload);
   } catch (error) {
+    if (!isCurrentSongWorkflow(workflowVersion)) return;
+    if (/没有返回 JSON|JSON 格式|JSON 对象|not valid JSON|Unexpected end/i.test(error.message)) {
+      const fallback = buildFallbackSongAnalysis(payload, error.message);
+      $("#songStatus").textContent = "MiniMax 返回了非结构化内容，已先生成临时学习卡。请稍后重试完整分析。";
+      $("#songStatus").className = "feedback bad";
+      renderSongAnalysis(fallback);
+      renderSongHistory();
+      return;
+    }
     renderSongPending(payload, `接口暂未可用：${error.message}`);
   }
 }
@@ -39025,7 +39266,7 @@ async function init() {
   newKanaQuestion();
   newWordQuestion();
   renderPhonics();
-  if (state.songHistory.length) {
+  if (state.songHistory.some((item) => item?.analysis)) {
     restoreSongHistory(0);
   } else {
     renderSongEmpty();
