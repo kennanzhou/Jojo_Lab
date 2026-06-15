@@ -35199,11 +35199,14 @@ const defaultAppSettings = {
 
 const cardCottagePhotoSources = Array.from({ length: 19 }, (_, index) => `./assets/card-cottage/fronts/jojo-front-${String(index + 1).padStart(2, "0")}.jpg`);
 const cardCottageFrameSrc = "./assets/card-cottage/gold-frame.png";
-const cardCottageTotal = 50;
+const cardCottageDefaultTotal = 50;
+const cardCottageSlotTotal = 50;
+const cardCottageMinTotal = 1;
+const cardCottageMaxTotal = 100;
 const cardCottageUploadMaxEdge = 1800;
 
 function defaultCardCottageSlots() {
-  return Array.from({ length: cardCottageTotal }, (_, index) => {
+  return Array.from({ length: cardCottageSlotTotal }, (_, index) => {
     const src = cardCottagePhotoSources[index];
     return src ? {
       name: `Jojo Photo ${String(index + 1).padStart(2, "0")}`,
@@ -35935,8 +35938,18 @@ function loadSongHistory() {
   }
 }
 
+function normalizeCardCottageTotal(value = cardCottageDefaultTotal) {
+  const total = Math.round(Number(value));
+  if (!Number.isFinite(total)) return cardCottageDefaultTotal;
+  return Math.max(cardCottageMinTotal, Math.min(cardCottageMaxTotal, total));
+}
+
+function currentCardCottageTotal() {
+  return normalizeCardCottageTotal(state?.cardCottage?.totalCards);
+}
+
 function normalizeCardCottageSlots(slots = []) {
-  const normalized = Array.from({ length: cardCottageTotal }, (_, index) => {
+  const normalized = Array.from({ length: cardCottageSlotTotal }, (_, index) => {
     const slot = Array.isArray(slots) ? slots[index] : null;
     if (!slot?.src) return null;
     return {
@@ -35953,14 +35966,15 @@ function filledCardCottageSlotIndexes(slots = state?.cardCottage?.slots) {
   return normalized.map((slot, index) => slot?.src ? index : -1).filter((index) => index >= 0);
 }
 
-function shuffledCardAssignments(slots = state?.cardCottage?.slots) {
+function shuffledCardAssignments(slots = state?.cardCottage?.slots, totalCards = cardCottageDefaultTotal) {
+  const total = normalizeCardCottageTotal(totalCards);
   const uploadedSlots = filledCardCottageSlotIndexes(slots);
   const sourceIndexes = uploadedSlots.length ? uploadedSlots : cardCottagePhotoSources.map((_, index) => index);
   const pool = [];
-  while (pool.length < cardCottageTotal) {
+  while (pool.length < total) {
     sourceIndexes.forEach((index) => pool.push(index));
   }
-  const assignments = pool.slice(0, cardCottageTotal);
+  const assignments = pool.slice(0, total);
   for (let index = assignments.length - 1; index > 0; index -= 1) {
     const swapIndex = Math.floor(Math.random() * (index + 1));
     [assignments[index], assignments[swapIndex]] = [assignments[swapIndex], assignments[index]];
@@ -35969,6 +35983,7 @@ function shuffledCardAssignments(slots = state?.cardCottage?.slots) {
 }
 
 function normalizeCardCottageState(value = {}) {
+  const totalCards = normalizeCardCottageTotal(value.totalCards);
   const rawSlots = normalizeCardCottageSlots(value.slots);
   const hasAnySlot = rawSlots.some((slot) => slot?.src);
   const shouldSeedDefaultSlots = !value.defaultSlotsSeeded && !hasAnySlot;
@@ -35977,16 +35992,16 @@ function normalizeCardCottageState(value = {}) {
   if (!validSources.size) {
     cardCottagePhotoSources.forEach((_, index) => validSources.add(index));
   }
-  const incomingAssignments = Array.isArray(value.assignments) && value.assignments.length === cardCottageTotal
-    ? value.assignments.map((item) => Number(item))
+  const incomingAssignments = Array.isArray(value.assignments)
+    ? value.assignments.map((item) => Number(item)).filter((item) => validSources.has(item)).slice(0, totalCards)
     : [];
-  const assignments = incomingAssignments.length === cardCottageTotal && incomingAssignments.every((item) => validSources.has(item))
+  const assignments = incomingAssignments.length === totalCards
     ? incomingAssignments
-    : shuffledCardAssignments(slots);
+    : [...incomingAssignments, ...shuffledCardAssignments(slots, totalCards - incomingAssignments.length)];
   const revealed = Array.isArray(value.revealed)
-    ? value.revealed.map(Number).filter((item) => item >= 0 && item < cardCottageTotal)
+    ? value.revealed.map(Number).filter((item) => item >= 0 && item < totalCards)
     : [];
-  return { assignments, revealed: [...new Set(revealed)], slots, defaultSlotsSeeded: true };
+  return { assignments, revealed: [...new Set(revealed)], slots, defaultSlotsSeeded: true, totalCards };
 }
 
 function loadCardCottageState() {
@@ -38298,9 +38313,9 @@ function renderCardCottage() {
   const grid = $("#cardhouseGrid");
   if (!grid) return;
   state.cardCottage = normalizeCardCottageState(state.cardCottage);
+  const totalCards = currentCardCottageTotal();
   const revealed = new Set(state.cardCottage.revealed);
-  $("#cardhouseCardCount").textContent = String(cardCottageTotal);
-  grid.innerHTML = Array.from({ length: cardCottageTotal }, (_, index) => {
+  grid.innerHTML = Array.from({ length: totalCards }, (_, index) => {
     const photoIndex = state.cardCottage.assignments[index] || 0;
     const isRevealed = revealed.has(index);
     const photoSrc = cardCottagePhotoSourceForAssignment(photoIndex);
@@ -38324,19 +38339,28 @@ function renderCardCottage() {
 }
 
 function updateCardCottageSummary() {
-  const revealedCount = Math.max(0, Math.min(cardCottageTotal, state.cardCottage.revealed.length));
-  const remainingCount = Math.max(0, cardCottageTotal - revealedCount);
+  const totalCards = currentCardCottageTotal();
+  const revealedCount = Math.max(0, Math.min(totalCards, state.cardCottage.revealed.length));
+  const remainingCount = Math.max(0, totalCards - revealedCount);
   const bigStars = Math.max(0, Number(state.wordRewards?.bigStars || 0));
   if ($("#cardhouseBigStarCount")) $("#cardhouseBigStarCount").textContent = String(bigStars);
-  $("#cardhouseRevealedCount").textContent = String(revealedCount);
-  $("#cardhouseCardCount").textContent = String(remainingCount);
-  if ($("#cardSettingsRevealedCount")) $("#cardSettingsRevealedCount").textContent = String(revealedCount);
+  if ($(".cardhouse-star-bank")) $(".cardhouse-star-bank").setAttribute("aria-label", `当前大金星 ${bigStars} 颗`);
+  if ($("#cardhouseProgressCount")) $("#cardhouseProgressCount").textContent = `${revealedCount}/${totalCards}`;
+  if ($(".cardhouse-progress-pill")) $(".cardhouse-progress-pill").setAttribute("aria-label", `已翻开 ${revealedCount} / ${totalCards}`);
+  if ($("#cardhouseBoard")) $("#cardhouseBoard").setAttribute("aria-label", `${totalCards} 张奖励卡`);
+  if ($("#cardSettingsProgressCount")) $("#cardSettingsProgressCount").textContent = `${revealedCount}/${totalCards}`;
   if ($("#cardSettingsRemainingCount")) $("#cardSettingsRemainingCount").textContent = String(remainingCount);
   if ($("#cardSettingsFilledSlotCount")) $("#cardSettingsFilledSlotCount").textContent = String(filledCardCottageSlotIndexes().length);
+  if ($("#cardCottageTotalInput")) {
+    $("#cardCottageTotalInput").min = String(cardCottageMinTotal);
+    $("#cardCottageTotalInput").max = String(cardCottageMaxTotal);
+    $("#cardCottageTotalInput").value = String(totalCards);
+  }
 }
 
 function resetCardCottage() {
-  state.cardCottage = normalizeCardCottageState({ ...state.cardCottage, assignments: shuffledCardAssignments(), revealed: [] });
+  const totalCards = currentCardCottageTotal();
+  state.cardCottage = normalizeCardCottageState({ ...state.cardCottage, assignments: shuffledCardAssignments(state.cardCottage?.slots, totalCards), revealed: [], totalCards });
   saveCardCottageState();
   renderCardCottage();
   const status = $("#cardhouseSettingsStatus");
@@ -38401,10 +38425,30 @@ function setCardSettingsStatus(message, tone = "good") {
 }
 
 function rerollCardCottageAssignments() {
+  const totalCards = currentCardCottageTotal();
   state.cardCottage = normalizeCardCottageState({
     ...state.cardCottage,
-    assignments: shuffledCardAssignments(state.cardCottage?.slots)
+    assignments: shuffledCardAssignments(state.cardCottage?.slots, totalCards),
+    totalCards
   });
+}
+
+function saveCardCottageTotalFromForm() {
+  const input = $("#cardCottageTotalInput");
+  const previousTotal = currentCardCottageTotal();
+  const nextTotal = normalizeCardCottageTotal(input?.value);
+  if (input) input.value = String(nextTotal);
+  if (nextTotal === previousTotal) {
+    setCardSettingsStatus(`卡片总数已经是 ${nextTotal}。`, "good");
+    return;
+  }
+  state.cardCottage = normalizeCardCottageState({
+    ...state.cardCottage,
+    totalCards: nextTotal
+  });
+  saveCardCottageState();
+  renderCardCottage();
+  setCardSettingsStatus(`卡片总数已更新为 ${nextTotal}。`, "good");
 }
 
 function renderCardCottageSettings() {
@@ -38470,7 +38514,7 @@ async function resizeCardImageFile(file) {
 
 async function uploadCardCottageSlot(slotIndex, file) {
   const index = Number(slotIndex);
-  if (!Number.isInteger(index) || index < 0 || index >= cardCottageTotal || !file) return;
+  if (!Number.isInteger(index) || index < 0 || index >= cardCottageSlotTotal || !file) return;
   try {
     setCardSettingsStatus(`正在处理 Slot ${String(index + 1).padStart(2, "0")} 的图片...`, "good");
     const dataUrl = await resizeCardImageFile(file);
@@ -38502,7 +38546,7 @@ async function uploadCardCottageSlot(slotIndex, file) {
 
 async function deleteCardCottageSlot(slotIndex) {
   const index = Number(slotIndex);
-  if (!Number.isInteger(index) || index < 0 || index >= cardCottageTotal) return;
+  if (!Number.isInteger(index) || index < 0 || index >= cardCottageSlotTotal) return;
   const slot = state.cardCottage?.slots?.[index];
   if (!slot?.src) return;
     if (serverPersistenceAvailable && slot.src.startsWith("/api/card-cottage/assets/")) {
@@ -38626,6 +38670,13 @@ function bindEvents() {
   $("#aiMode").addEventListener("change", syncEndpointForMode);
   $("#saveAiSettings").addEventListener("click", saveAiSettingsFromForm);
   $("#saveWordSettings").addEventListener("click", saveWordSettingsFromForm);
+  $("#saveCardCottageTotal").addEventListener("click", saveCardCottageTotalFromForm);
+  $("#cardCottageTotalInput").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      saveCardCottageTotalFromForm();
+    }
+  });
   $("#resetCardCottage").addEventListener("click", resetCardCottage);
   $("#testAiSettings").addEventListener("click", testAiSettings);
   $("#settingsDialog").addEventListener("click", (event) => {

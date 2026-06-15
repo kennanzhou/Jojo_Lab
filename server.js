@@ -35,7 +35,7 @@ const defaultState = {
   songHistory: [],
   kanaProgress: {},
   phonicsQuest: { unitIndex: 0, unlocked: 0, stars: 0, completed: [], stepIndex: 0, listenIndex: 0, flashIndex: 0, blendIndex: 0, spellIndex: 0, spelling: [] },
-  cardCottage: { assignments: [], revealed: [], slots: [], defaultSlotsSeeded: false },
+  cardCottage: { assignments: [], revealed: [], slots: [], defaultSlotsSeeded: false, totalCards: 50 },
   appSettings: { wordRepeatVoEnabled: false },
   kanaScore: 0,
   played: 0,

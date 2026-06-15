@@ -412,12 +412,16 @@
               <p class="section-subtitle">集卡屋 · 孩子的奖励卡片收藏入口</p>
             </div>
             <div class="cardhouse-counter" aria-label="Card Cottage 翻卡进度">
-              <span><strong id="cardhouseBigStarCount">0</strong> 大金星</span>
-              <span><strong id="cardhouseRevealedCount">0</strong> 已翻开</span>
-              <span><strong id="cardhouseCardCount">50</strong> 待翻开</span>
+              <span class="cardhouse-star-bank" aria-label="当前大金星 0 颗">
+                <img src="./assets/gold-star-reward.png" alt="">
+                <strong id="cardhouseBigStarCount">0</strong>
+              </span>
+              <span class="cardhouse-progress-pill" aria-label="已翻开 0 / 50">
+                <strong id="cardhouseProgressCount">0/50</strong>
+              </span>
             </div>
           </div>
-          <div class="cardhouse-board" aria-label="50 张等待翻开的奖励卡">
+          <div class="cardhouse-board" id="cardhouseBoard" aria-label="50 张奖励卡">
             <div class="cardhouse-grid" id="cardhouseGrid"></div>
           </div>
         </section>
@@ -613,7 +617,7 @@
           <div>
             <p class="eyebrow">Card Cottage Settings</p>
             <h2 id="cardhouseSettingsTitle">Card Cottage 设置</h2>
-            <p class="section-subtitle">管理 50 个奖励卡正面图片槽；不足 50 张时，卡牌会随机重复已有图片。</p>
+            <p class="section-subtitle">管理奖励卡总数和 50 个正面图片槽；图片不足时，卡牌会随机重复已有图片。</p>
           </div>
           <button class="ghost-btn icon-close" data-close-dialog="cardhouseSettingsDialog" type="button" aria-label="关闭 Card 设置">×</button>
         </div>
@@ -622,14 +626,18 @@
             <strong>卡牌状态</strong>
             <p>翻开的卡会保持正面显示，并跨终端保存。</p>
             <div class="card-settings-counts" aria-label="Card Cottage 当前计数">
-              <span><strong id="cardSettingsRevealedCount">0</strong> 已翻开</span>
+              <span><strong id="cardSettingsProgressCount">0/50</strong> 已翻开</span>
               <span><strong id="cardSettingsRemainingCount">50</strong> 待翻开</span>
             </div>
           </div>
           <div class="card-settings-actions">
             <strong>管理</strong>
+            <label class="card-total-control">卡片总数
+              <input id="cardCottageTotalInput" type="number" min="1" max="100" step="1" inputmode="numeric" value="50">
+            </label>
+            <button class="primary-btn" id="saveCardCottageTotal" type="button">更新总数</button>
             <button class="ghost-btn danger-btn" id="resetCardCottage" type="button">复位卡牌</button>
-            <p class="fine-print">复位会盖回所有卡片，并重新随机分配照片。</p>
+            <p class="fine-print">总数默认 50，可设为 1-100。复位会盖回所有卡片，并重新随机分配照片。</p>
           </div>
         </div>
         <div class="card-slot-toolbar">
