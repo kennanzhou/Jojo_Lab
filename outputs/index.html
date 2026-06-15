@@ -1,0 +1,698 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Jojo LAB</title>
+    <link rel="icon" type="image/svg+xml" href="./assets/jojo-logo.svg">
+    <link rel="apple-touch-icon" href="./assets/jojo-logo.svg">
+    <link rel="stylesheet" href="./styles.css?v=20260615-art-gallery-edge-fill">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <button class="brand" id="openSettings" type="button" aria-label="回到首页">
+          <img class="brand-logo" src="./assets/jojo-logo.svg" alt="JOJO">
+          <span class="brand-wordmark">
+            <strong>JOJO LAB</strong>
+            <span class="brand-separator">·</span>
+            <img class="brand-slogan-image" src="./assets/play-hard-think-sharp.png" alt="PLAY HARD, THINK SHARP.">
+          </span>
+        </button>
+        <div class="topbar-actions">
+          <button class="art-mode-toggle" id="artModeToggle" type="button" aria-label="欣赏主图" aria-pressed="false" title="欣赏主图">
+              <span class="art-mode-icon" aria-hidden="true">
+              <span class="art-mode-sun"></span>
+              <span class="art-mode-hill"></span>
+            </span>
+          </button>
+          <button class="topbar-settings-toggle" id="activeViewSettings" type="button" aria-label="打开当前程序设置" title="当前程序设置">⚙</button>
+        </div>
+      </header>
+
+      <main>
+        <section id="home" class="view active" aria-label="Jojo LAB 子程序入口">
+          <div class="poster-sheet">
+            <figure class="hero-poster" aria-label="Jojo LAB 复古学习车插画">
+              <img src="./assets/jojo-retro-hero-robot-cheer.png" alt="Jojo 坐在复古学习小巴车门旁弹尤克里里，旁边有红金装甲机器人朋友背对镜头竖起大拇指鼓励他">
+              <div class="module-grid" aria-label="子程序入口">
+                <a class="module-tile tile-kana" href="#kana" data-speak="Kana Quest" data-zh="日语五十音识读">
+                  <span class="module-icon" aria-hidden="true">
+                    <svg viewBox="0 0 96 96" role="img">
+                      <rect class="icon-fill" x="19" y="18" width="46" height="58" rx="10"></rect>
+                      <rect class="icon-fill-soft" x="31" y="12" width="46" height="58" rx="10"></rect>
+                      <path class="icon-line" d="M42 33h21M42 47h14M43 60c8-2 15-2 21 2"></path>
+                      <circle class="icon-dot" cx="68" cy="31" r="4"></circle>
+                    </svg>
+                  </span>
+                  <strong>Kana Quest</strong>
+                  <small class="module-meaning" aria-live="polite"></small>
+                </a>
+                <a class="module-tile tile-words" href="#words" data-speak="Word Camp" data-zh="英语背单词">
+                  <span class="module-icon" aria-hidden="true">
+                    <svg viewBox="0 0 96 96" role="img">
+                      <path class="icon-fill" d="M18 74V43l30-21 30 21v31z"></path>
+                      <path class="icon-fill-soft" d="M37 74V52c0-7 5-13 11-13s11 6 11 13v22z"></path>
+                      <path class="icon-line" d="M18 43l30-21 30 21M28 74h40M48 22v52"></path>
+                      <circle class="icon-dot" cx="33" cy="51" r="4"></circle>
+                      <circle class="icon-dot" cx="63" cy="51" r="4"></circle>
+                    </svg>
+                  </span>
+                  <strong>Word Camp</strong>
+                  <small class="module-meaning" aria-live="polite"></small>
+                </a>
+                <a class="module-tile tile-phonics" href="#phonics" data-speak="Phonics Jam" data-zh="英语自然拼读">
+                  <span class="module-icon" aria-hidden="true">
+                    <svg viewBox="0 0 96 96" role="img">
+                      <rect class="icon-fill" x="16" y="42" width="24" height="24" rx="7"></rect>
+                      <rect class="icon-fill-soft" x="36" y="30" width="24" height="24" rx="7"></rect>
+                      <rect class="icon-fill" x="56" y="42" width="24" height="24" rx="7"></rect>
+                      <path class="icon-line" d="M28 54h0M48 42h0M68 54h0M28 66c11 9 29 9 40 0"></path>
+                    </svg>
+                  </span>
+                  <strong>Phonics Jam</strong>
+                  <small class="module-meaning" aria-live="polite"></small>
+                </a>
+                <a class="module-tile tile-songs" href="#songs" data-speak="Song Notes" data-zh="英文歌学习笔记">
+                  <span class="module-icon" aria-hidden="true">
+                    <svg viewBox="0 0 96 96" role="img">
+                      <path class="icon-fill-soft" d="M58 18v37c0 10-7 18-18 18-8 0-14-5-14-12s6-12 14-12c4 0 8 1 10 4V25z"></path>
+                      <path class="icon-fill" d="M58 18l22 8v13l-22-8z"></path>
+                      <path class="icon-line" d="M58 18v37c0 10-7 18-18 18-8 0-14-5-14-12s6-12 14-12c4 0 8 1 10 4V25M58 18l22 8v13l-22-8"></path>
+                    </svg>
+                  </span>
+                  <strong>Song Notes</strong>
+                  <small class="module-meaning" aria-live="polite"></small>
+                </a>
+                <a class="module-tile tile-gallery" href="#gallery" data-speak="Art Gallery" data-zh="艺术画廊">
+                  <span class="module-icon" aria-hidden="true">
+                    <svg viewBox="0 0 96 96" role="img">
+                      <rect class="icon-fill-soft" x="18" y="21" width="60" height="48" rx="8"></rect>
+                      <path class="icon-fill" d="M25 63l17-18 12 12 8-9 12 15z"></path>
+                      <circle class="icon-dot" cx="61" cy="35" r="6"></circle>
+                      <path class="icon-line" d="M18 69h60M18 21h60v48H18zM25 63l17-18 12 12 8-9 12 15"></path>
+                    </svg>
+                  </span>
+                  <strong>Art Gallery</strong>
+                  <small class="module-meaning" aria-live="polite"></small>
+                </a>
+                <a class="module-tile tile-cardhouse" href="#cardhouse" data-speak="Card Cottage" data-zh="奖励卡片收藏">
+                  <span class="module-icon" aria-hidden="true">
+                    <svg viewBox="0 0 96 96" role="img">
+                      <rect class="icon-fill" x="22" y="28" width="40" height="52" rx="9" transform="rotate(-8 42 54)"></rect>
+                      <rect class="icon-fill-soft" x="38" y="20" width="40" height="52" rx="9" transform="rotate(9 58 46)"></rect>
+                      <path class="icon-line" d="M36 48l8 8 15-18M22 76c13 7 39 7 52 0"></path>
+                      <circle class="icon-dot" cx="33" cy="39" r="4"></circle>
+                      <circle class="icon-dot" cx="65" cy="61" r="4"></circle>
+                    </svg>
+                  </span>
+                  <strong>Card Cottage</strong>
+                  <small class="module-meaning" aria-live="polite"></small>
+                </a>
+              </div>
+            </figure>
+            <div class="status-strip home-stats-hidden" aria-hidden="true">
+              <span><strong id="playedCount">0</strong> 次练习</span>
+              <span><strong id="galleryCount">0</strong> 件作品</span>
+              <span><strong>6</strong> 个子程序</span>
+            </div>
+          </div>
+        </section>
+
+        <section id="kana" class="view" aria-labelledby="kana-title">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Japanese Kana</p>
+              <h2 id="kana-title">Kana Quest</h2>
+              <p class="section-subtitle">50音平假名 / 片假名识读游戏</p>
+            </div>
+            <div class="section-actions">
+              <div class="score-pill">得分 <strong id="kanaScore">0</strong></div>
+            </div>
+          </div>
+          <div class="tool-layout">
+            <aside class="control-panel">
+              <label>练习模式
+                <select id="kanaMode">
+                  <option value="hiragana">平假名</option>
+                  <option value="katakana">片假名</option>
+                  <option value="mixed">混合</option>
+                </select>
+              </label>
+              <label>题目类型
+                <select id="kanaQuestionType">
+                  <option value="romaji">看假名选罗马音</option>
+                  <option value="kana">看罗马音选假名</option>
+                </select>
+              </label>
+              <button class="primary-btn" id="newKanaQuestion" type="button">下一题</button>
+              <button class="ghost-btn" id="speakKana" type="button">播放发音</button>
+              <div class="word-progress-panel" aria-label="假名掌握进度">
+                <div class="word-progress-head">
+                  <strong id="kanaProgressTitle">假名掌握</strong>
+                  <span id="kanaProgressSummary">0 / 0</span>
+                </div>
+                <div class="word-progress-strip" id="kanaProgressStrip"></div>
+              </div>
+            </aside>
+            <div class="game-board">
+              <div class="prompt-card">
+                <span class="prompt-label">Question</span>
+                <strong id="kanaPrompt">あ</strong>
+                <small id="kanaHint">选择正确读音</small>
+              </div>
+              <div id="kanaOptions" class="option-grid"></div>
+              <div id="kanaFeedback" class="feedback" role="status"></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="words" class="view" aria-labelledby="words-title">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">English Words</p>
+              <h2 id="words-title">Word Camp</h2>
+              <p class="section-subtitle">英语背单词游戏</p>
+            </div>
+            <div class="section-actions">
+              <div class="word-star-panel" id="wordStarPanel" aria-label="Word Camp 星星奖励">
+                <div class="word-star-shelf">
+                  <div class="small-star-tray" id="wordSmallStarTray" aria-label="小星星"></div>
+                  <div class="big-star-tray" id="wordBigStarTray" aria-label="大星星"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="tool-layout">
+            <aside class="control-panel">
+              <label>识读方式
+                <select id="wordMode">
+                  <option value="meaning">看英文选中文</option>
+                  <option value="sound">听发音选英文</option>
+                  <option value="spelling">看中文拼单词</option>
+                </select>
+              </label>
+              <button class="primary-btn" id="newWordQuestion" type="button">开始 / 下一题</button>
+              <button class="ghost-btn" id="speakWord" type="button">标准发音</button>
+              <div class="word-progress-panel" aria-label="词库掌握进度">
+                <div class="word-progress-head">
+                  <strong id="wordProgressTitle">总体完成量</strong>
+                  <span id="wordProgressSummary">0 / 0</span>
+                </div>
+                <div class="word-progress-strip" id="wordProgressStrip"></div>
+              </div>
+              <div class="word-progress-panel word-daily-panel" aria-label="今日单词完成度">
+                <div class="word-progress-head">
+                  <strong id="wordDailyTitle">今日单词</strong>
+                  <span id="wordDailySummary">0 / 0</span>
+                </div>
+                <div class="word-progress-strip" id="wordDailyStrip"></div>
+              </div>
+            </aside>
+            <div class="game-board">
+              <div class="word-card">
+                <div>
+                  <span class="prompt-label">Word Mission</span>
+                  <strong id="wordPrompt" role="button" tabindex="0" aria-label="点击朗读单词">apple</strong>
+                  <small id="wordMeta">/ˈæpəl/ · noun</small>
+                </div>
+              </div>
+              <div id="wordOptions" class="option-grid"></div>
+              <div id="spellingBox" class="spelling-box hidden">
+                <div id="spellingAnswer" class="spelling-answer" aria-live="polite"></div>
+                <div id="spellingKeyboard" class="spelling-keyboard" aria-label="拼写键盘"></div>
+              </div>
+              <p id="wordExample" class="example-line"></p>
+              <div id="wordFeedback" class="feedback" role="status"></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="phonics" class="view" aria-labelledby="phonics-title">
+          <div class="section-head phonics-quest-head">
+            <div>
+              <p class="eyebrow">Phonics</p>
+              <h2 id="phonics-title">Phonics Quest</h2>
+              <p class="section-subtitle" id="phonicsQuestGoal">按照声音意识、认音、拼读、听写、可解码阅读一路闯关。</p>
+            </div>
+            <div class="section-actions">
+              <div class="score-pill">Stars <strong id="phonicsStarCount">0</strong></div>
+            </div>
+          </div>
+          <div class="phonics-quest-shell">
+            <aside class="phonics-unit-panel" aria-label="自然拼读单元">
+              <div class="word-progress-head">
+                <strong id="phonicsUnitTitle">短元音起步</strong>
+                <span id="phonicsChallengeStatus">还需要 30 stars</span>
+              </div>
+              <div class="phonics-star-track" aria-hidden="true">
+                <span id="phonicsStarFill"></span>
+              </div>
+              <div id="phonicsUnitList" class="phonics-unit-list"></div>
+              <button class="primary-btn" id="phonicsChallengeButton" type="button" disabled>30-Star Challenge</button>
+            </aside>
+
+            <div class="phonics-quest-board" aria-label="自然拼读闯关">
+              <article class="phonics-quest-card">
+                <span class="prompt-label">1 · Sound Detective</span>
+                <h3 id="phonicsListenPrompt">找一个以 /s/ 开头的词。</h3>
+                <div id="phonicsListenChoices" class="phonics-choice-grid"></div>
+              </article>
+
+              <article class="phonics-quest-card">
+                <span class="prompt-label">2 · Fast Sounds</span>
+                <button class="phonics-sound-card" id="phonicsFlashCard" type="button">s</button>
+                <div class="phonics-button-row">
+                  <button class="ghost-btn danger-btn" id="phonicsFlashWrong" type="button">还没熟</button>
+                  <button class="primary-btn" id="phonicsFlashRight" type="button">说对了</button>
+                </div>
+              </article>
+
+              <article class="phonics-quest-card">
+                <span class="prompt-label">3 · Blend Builder</span>
+                <div class="letter-slots" id="phonicsBlendSlots"></div>
+                <strong class="phonics-target-word" id="phonicsBlendWord">sat</strong>
+                <div class="phonics-button-row">
+                  <button class="ghost-btn danger-btn" id="phonicsBlendWrong" type="button">再拆一遍</button>
+                  <button class="primary-btn" id="phonicsBlendRight" type="button">读出来了</button>
+                </div>
+              </article>
+
+              <article class="phonics-quest-card">
+                <span class="prompt-label">4 · Word Work</span>
+                <h3>听声音，拼出单词</h3>
+                <button class="primary-btn phonics-speak-btn" id="phonicsSpellSpeak" type="button">播放声音</button>
+                <p class="phonics-meaning" id="phonicsSpellMeaning">中文释义</p>
+                <div id="phonicsTileBank" class="phonics-tile-bank"></div>
+                <div id="phonicsSpellBox" class="phonics-spell-box" aria-live="polite"></div>
+                <div class="phonics-button-row">
+                  <button class="ghost-btn" id="phonicsSpellClear" type="button">清空</button>
+                  <button class="primary-btn" id="phonicsSpellCheck" type="button">检查</button>
+                </div>
+              </article>
+
+              <article class="phonics-quest-card phonics-story-card">
+                <span class="prompt-label">5 · Story Unlock</span>
+                <div id="phonicsStoryText" class="phonics-story-text"></div>
+                <div class="phonics-button-row">
+                  <button class="ghost-btn danger-btn" id="phonicsStoryWrong" type="button">还没读顺</button>
+                  <button class="primary-btn" id="phonicsStoryRight" type="button">读完了</button>
+                </div>
+                <div id="phonicsFeedback" class="feedback" role="status"></div>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section id="songs" class="view" aria-labelledby="songs-title">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">English Songs</p>
+              <h2 id="songs-title">Song Notes</h2>
+              <p class="section-subtitle">Jojo 喜欢的英文歌大模型精读</p>
+            </div>
+            <div class="section-actions">
+              <button class="ghost-btn" id="speakSongAll" type="button">逐句朗读</button>
+            </div>
+          </div>
+          <div class="tool-layout">
+            <aside class="control-panel">
+              <div class="song-info-window">
+                <label>歌曲信息
+                  <textarea id="songQuery" rows="4" placeholder="一句歌词、MV 画面、歌手、旋律印象，或 Jojo 怎么描述这首歌"></textarea>
+                </label>
+                <div class="song-info-grid">
+                  <label>歌曲名
+                    <input id="songTitle" placeholder="可选">
+                  </label>
+                  <label>歌手 / 来源
+                    <input id="songArtist" placeholder="可选">
+                  </label>
+                </div>
+              </div>
+              <label>解释深度
+                <select id="songDepth">
+                  <option value="child">给孩子讲清楚</option>
+                  <option value="parent">家长陪读版</option>
+                  <option value="deep">语法和文化细讲</option>
+                </select>
+              </label>
+              <label>歌词
+                <textarea id="songLyrics" rows="10" placeholder="粘贴你拥有或授权使用的歌词；每行一句更适合逐句解释"></textarea>
+              </label>
+              <div class="song-action-grid">
+                <button class="ghost-btn" id="findSongCandidates" type="button">搜索候选</button>
+                <button class="primary-btn" id="analyzeSong" type="button">分析歌曲</button>
+                <button class="ghost-btn" id="addSongWordBank" type="button" disabled>加入词库</button>
+                <a class="doc-link" href="./ai-song-integration.md">接入说明</a>
+              </div>
+              <div class="song-history-panel" id="songHistoryPanel"></div>
+              <p class="fine-print song-copyright-note">版权提示：使用你拥有或授权使用的歌词。</p>
+            </aside>
+            <div class="game-board song-board">
+              <div class="song-summary">
+                <span class="prompt-label">Song Study</span>
+                <strong id="songStudyTitle">等待歌词</strong>
+                <small id="songStudyMeta">粘贴歌词后，由大模型生成逐句翻译和逐词讲解</small>
+              </div>
+              <div id="songStatus" class="feedback" role="status"></div>
+              <div id="songCandidates" class="song-candidates"></div>
+              <div id="songLines" class="song-lines"></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="gallery" class="view" aria-labelledby="gallery-title">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Jojo Art Gallery</p>
+              <h2 id="gallery-title">Art Gallery</h2>
+              <p class="section-subtitle">Jojo 的艺术画廊</p>
+            </div>
+            <div class="section-actions">
+              <button class="primary-btn" id="exportGallery" type="button">导出作品数据</button>
+            </div>
+          </div>
+          <div class="gallery-layout">
+            <form id="artForm" class="upload-panel">
+              <label>作品标题
+                <input id="artTitle" required placeholder="例如：彩色机器人">
+              </label>
+              <label>创作日期
+                <input id="artDate" type="date" required>
+              </label>
+              <div class="art-dropzone" id="artDropzone">
+                <input id="artFile" type="file" accept="image/*">
+                <div class="art-drop-copy">
+                  <strong>拖拽作品到这里</strong>
+                  <small>也可以点击选择图片</small>
+                </div>
+                <figure class="art-upload-preview" id="artUploadPreview" hidden>
+                  <img id="artPreviewImage" alt="待加入画廊的作品预览">
+                  <figcaption id="artPreviewName"></figcaption>
+                </figure>
+              </div>
+              <label>Jojo 的一句话
+                <textarea id="artNote" rows="3" placeholder="他说这幅画里发生了什么？"></textarea>
+              </label>
+              <button class="primary-btn" type="submit">加入画廊</button>
+              <p class="fine-print">作品会保存在当前浏览器的本地存储里。配置 MiniMax 后会自动生成作品分析。</p>
+            </form>
+            <div class="gallery-wall">
+              <div id="artGrid" class="art-grid"></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="cardhouse" class="view" aria-labelledby="cardhouse-title">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Reward Cards</p>
+              <h2 id="cardhouse-title">Card Cottage</h2>
+              <p class="section-subtitle">集卡屋 · 孩子的奖励卡片收藏入口</p>
+            </div>
+            <div class="cardhouse-counter" aria-label="Card Cottage 翻卡进度">
+              <span><strong id="cardhouseBigStarCount">0</strong> 大金星</span>
+              <span><strong id="cardhouseRevealedCount">0</strong> 已翻开</span>
+              <span><strong id="cardhouseCardCount">50</strong> 待翻开</span>
+            </div>
+          </div>
+          <div class="cardhouse-board" aria-label="50 张等待翻开的奖励卡">
+            <div class="cardhouse-grid" id="cardhouseGrid"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <dialog class="card-preview-dialog" id="cardPreviewDialog" aria-label="奖励卡大图预览">
+      <button class="card-preview-close" id="closeCardPreview" type="button" aria-label="关闭大图">×</button>
+      <img id="cardPreviewImage" alt="Jojo 奖励卡大图">
+    </dialog>
+    <dialog class="art-preview-dialog" id="artPreviewDialog" aria-label="作品全屏预览">
+      <button class="card-preview-close" id="closeArtPreview" type="button" aria-label="关闭作品预览">×</button>
+      <img id="artPreviewFullImage" alt="作品全屏预览">
+    </dialog>
+
+    <dialog class="settings-dialog" id="settingsDialog" aria-labelledby="settingsTitle">
+      <form method="dialog" class="settings-panel">
+        <div class="settings-head">
+          <div>
+            <p class="eyebrow">Home Settings</p>
+            <h2 id="settingsTitle">主页 API 设置</h2>
+            <p class="section-subtitle">MiniMax-M3 配置在主页统一管理，供 Song Notes 和 Art Gallery 使用。</p>
+          </div>
+          <button class="ghost-btn icon-close" id="closeSettings" type="button" aria-label="关闭设置">×</button>
+        </div>
+        <div class="settings-grid">
+          <label>调用方式
+            <select id="aiMode">
+              <option value="minimax-openai">MiniMax 官方 OpenAI-compatible</option>
+              <option value="minimax-v2">MiniMax 官方 ChatCompletion V2</option>
+              <option value="proxy">自建代理接口</option>
+            </select>
+          </label>
+          <label>API 地址
+            <input id="aiEndpoint" placeholder="https://api.minimax.io/v1/chat/completions">
+          </label>
+          <label>模型
+            <select id="aiModel">
+              <option value="MiniMax-M3">MiniMax-M3</option>
+            </select>
+          </label>
+          <label class="api-key-label">API Key
+            <span class="api-key-row">
+              <input id="aiApiKey" type="password" autocomplete="off" placeholder="只保存在本机私有存档">
+              <button class="ghost-btn" id="testAiSettings" type="button">测试连接</button>
+            </span>
+          </label>
+        </div>
+        <p class="fine-print">MiniMax 官方模式会按 Chat Completions 逻辑发送：Authorization Bearer、model、messages、temperature、stream:false。家庭局域网私用可以直连；公网部署仍建议把 Key 放到自建代理里。</p>
+        <div id="aiSettingsStatus" class="feedback" role="status"></div>
+        <div class="settings-actions">
+          <button class="primary-btn" id="saveAiSettings" type="button">保存 API 设置</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="settings-dialog" id="wordSettingsDialog" aria-labelledby="wordSettingsTitle">
+      <form method="dialog" class="settings-panel">
+        <div class="settings-head">
+          <div>
+            <p class="eyebrow">Word Camp Settings</p>
+            <h2 id="wordSettingsTitle">Word Camp 设置</h2>
+            <p class="section-subtitle">每日单词、VO 跟读和词库管理都放在这里。</p>
+          </div>
+          <button class="ghost-btn icon-close" id="closeWordSettings" type="button" aria-label="关闭 Word Camp 设置">×</button>
+        </div>
+        <div class="settings-grid word-settings-grid">
+          <label>每日单词数量
+            <select id="dailyWordCount">
+              <option value="10">10 个</option>
+              <option value="20">20 个</option>
+              <option value="30">30 个</option>
+              <option value="40">40 个</option>
+              <option value="50">50 个</option>
+              <option value="60">60 个</option>
+              <option value="70">70 个</option>
+              <option value="80">80 个</option>
+              <option value="90">90 个</option>
+              <option value="100">100 个</option>
+            </select>
+          </label>
+          <label class="settings-toggle">VO 跟读闯关
+            <span class="toggle-row">
+              <input id="wordRepeatVoEnabled" type="checkbox">
+              <span>看英文选中文答对后，必须跟读正确才能下一题。</span>
+            </span>
+          </label>
+        </div>
+        <section class="settings-word-library" aria-labelledby="wordLibraryTitle">
+          <div class="word-library-controls">
+            <label>当前词库
+              <select id="settingsWordBank">
+                <option value="ket-official">KET 官方词汇表</option>
+                <option value="all">全部词库</option>
+              </select>
+            </label>
+            <button class="ghost-btn" id="openImportGuide" type="button">导入格式说明</button>
+            <button class="primary-btn" id="openImportWordBank" type="button">导入新词库</button>
+            <button class="ghost-btn" id="resetWordBank" type="button">复位当前词库</button>
+            <button class="ghost-btn danger-btn" id="resetWordStars" type="button">复位星星</button>
+            <button class="ghost-btn danger-btn" id="deleteWordBank" type="button">删除当前词库</button>
+          </div>
+          <div class="word-library-head">
+            <strong id="wordLibraryTitle">词库列表</strong>
+            <span class="word-library-legend">
+              <i class="level-dot level-0"></i>0
+              <i class="level-dot level-1"></i>1
+              <i class="level-dot level-2"></i>2
+              <i class="level-dot level-3"></i>3
+              <i class="level-dot level-n"></i>N
+            </span>
+          </div>
+          <div class="word-table-wrap">
+            <table class="word-table">
+              <thead>
+                <tr>
+                  <th>英文</th>
+                  <th>音标</th>
+                  <th>释义</th>
+                  <th>掌握程度</th>
+                </tr>
+              </thead>
+              <tbody id="wordLibraryRows"></tbody>
+            </table>
+          </div>
+        </section>
+        <div id="wordSettingsStatus" class="feedback" role="status"></div>
+        <div class="settings-actions">
+          <button class="primary-btn" id="saveWordSettings" type="button">保存 Word 设置</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="settings-dialog module-info-dialog" id="kanaSettingsDialog" aria-labelledby="kanaSettingsTitle">
+      <form method="dialog" class="settings-panel">
+        <div class="settings-head">
+          <div>
+            <p class="eyebrow">Kana Quest Settings</p>
+            <h2 id="kanaSettingsTitle">Kana Quest 设置</h2>
+            <p class="section-subtitle">练习模式和题目类型在左侧面板即时切换；掌握进度覆盖全部平假名和片假名。</p>
+          </div>
+          <button class="ghost-btn icon-close" data-close-dialog="kanaSettingsDialog" type="button" aria-label="关闭 Kana 设置">×</button>
+        </div>
+        <p class="fine-print">Kana Quest 不提供范围和数量设置，因为总量固定，系统会持续记录每个假名的掌握进度。</p>
+      </form>
+    </dialog>
+
+    <dialog class="settings-dialog module-info-dialog" id="phonicsSettingsDialog" aria-labelledby="phonicsSettingsTitle">
+      <form method="dialog" class="settings-panel">
+        <div class="settings-head">
+          <div>
+            <p class="eyebrow">Phonics Quest Settings</p>
+            <h2 id="phonicsSettingsTitle">Phonics Quest 设置</h2>
+            <p class="section-subtitle">自然拼读按单元闯关，stars 和当前单元会跨终端同步保存。</p>
+          </div>
+          <button class="ghost-btn icon-close" data-close-dialog="phonicsSettingsDialog" type="button" aria-label="关闭 Phonics 设置">×</button>
+        </div>
+        <p class="fine-print">每个单元包含听音、闪卡、拼读、听写和可解码阅读。当前版本不需要额外选择范围。</p>
+      </form>
+    </dialog>
+
+    <dialog class="settings-dialog module-info-dialog" id="songSettingsDialog" aria-labelledby="songSettingsTitle">
+      <form method="dialog" class="settings-panel">
+        <div class="settings-head">
+          <div>
+            <p class="eyebrow">Song Notes Settings</p>
+            <h2 id="songSettingsTitle">Song Notes 设置</h2>
+            <p class="section-subtitle">歌曲信息、解释深度和歌词输入保留在左侧工作流；MiniMax API 在主页齿轮里设置。</p>
+          </div>
+          <button class="ghost-btn icon-close" data-close-dialog="songSettingsDialog" type="button" aria-label="关闭 Song 设置">×</button>
+        </div>
+        <p class="fine-print">已分析歌曲会进入 Song Notes 历史记录，并通过本机共享状态跨终端保存。请只粘贴你拥有或授权用于私下学习的歌词。</p>
+      </form>
+    </dialog>
+
+    <dialog class="settings-dialog module-info-dialog" id="gallerySettingsDialog" aria-labelledby="gallerySettingsTitle">
+      <form method="dialog" class="settings-panel">
+        <div class="settings-head">
+          <div>
+            <p class="eyebrow">Art Gallery Settings</p>
+            <h2 id="gallerySettingsTitle">Art Gallery 设置</h2>
+            <p class="section-subtitle">作品拖拽上传、预览和导出保留在画廊界面；MiniMax 分析使用主页 API。</p>
+          </div>
+          <button class="ghost-btn icon-close" data-close-dialog="gallerySettingsDialog" type="button" aria-label="关闭 Gallery 设置">×</button>
+        </div>
+        <p class="fine-print">作品数据会保存到当前浏览器和本机共享状态。导出按钮在画廊标题栏，适合做家庭备份。</p>
+      </form>
+    </dialog>
+
+    <dialog class="settings-dialog module-info-dialog" id="cardhouseSettingsDialog" aria-labelledby="cardhouseSettingsTitle">
+      <form method="dialog" class="settings-panel">
+        <div class="settings-head">
+          <div>
+            <p class="eyebrow">Card Cottage Settings</p>
+            <h2 id="cardhouseSettingsTitle">Card Cottage 设置</h2>
+            <p class="section-subtitle">管理 50 个奖励卡正面图片槽；不足 50 张时，卡牌会随机重复已有图片。</p>
+          </div>
+          <button class="ghost-btn icon-close" data-close-dialog="cardhouseSettingsDialog" type="button" aria-label="关闭 Card 设置">×</button>
+        </div>
+        <div class="card-settings-layout">
+          <div class="card-settings-summary">
+            <strong>卡牌状态</strong>
+            <p>翻开的卡会保持正面显示，并跨终端保存。</p>
+            <div class="card-settings-counts" aria-label="Card Cottage 当前计数">
+              <span><strong id="cardSettingsRevealedCount">0</strong> 已翻开</span>
+              <span><strong id="cardSettingsRemainingCount">50</strong> 待翻开</span>
+            </div>
+          </div>
+          <div class="card-settings-actions">
+            <strong>管理</strong>
+            <button class="ghost-btn danger-btn" id="resetCardCottage" type="button">复位卡牌</button>
+            <p class="fine-print">复位会盖回所有卡片，并重新随机分配照片。</p>
+          </div>
+        </div>
+        <div class="card-slot-toolbar">
+          <div>
+            <strong>正面图片卡槽</strong>
+            <p class="fine-print">点击槽位上传/替换，也可以把图片直接拖到槽位上。删除图片后，卡牌会用剩余图片重新随机分配。</p>
+          </div>
+          <span><strong id="cardSettingsFilledSlotCount">0</strong> / 50 已放入图片</span>
+        </div>
+        <div class="card-slot-grid" id="cardSlotGrid" aria-label="Card Cottage 图片卡槽"></div>
+        <div id="cardhouseSettingsStatus" class="feedback" role="status"></div>
+      </form>
+    </dialog>
+    <div id="appToast" class="app-toast" role="status" aria-live="polite"></div>
+
+    <dialog class="settings-dialog import-guide-dialog" id="importGuideDialog" aria-labelledby="importGuideTitle">
+      <form method="dialog" class="settings-panel">
+        <div class="settings-head">
+          <div>
+            <p class="eyebrow">Word Camp Import</p>
+            <h2 id="importGuideTitle">词汇表导入格式说明</h2>
+            <p class="section-subtitle">可复制给大模型，让它把任何词汇表整理成系统可导入格式。</p>
+          </div>
+          <button class="ghost-btn icon-close" id="closeImportGuide" type="button" aria-label="关闭导入说明">×</button>
+        </div>
+        <div class="import-guide-body">
+          <p id="importGuideText"></p>
+          <pre id="importGuideExample"></pre>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="settings-dialog import-word-dialog" id="importWordDialog" aria-labelledby="importWordTitle">
+      <form method="dialog" class="settings-panel">
+        <div class="settings-head">
+          <div>
+            <p class="eyebrow">Word Camp Import</p>
+            <h2 id="importWordTitle">导入新词库</h2>
+            <p class="section-subtitle">每次导入都会保存为一个独立词库，少于 10 个有效词条不会进入 Word Camp。</p>
+          </div>
+          <button class="ghost-btn icon-close" id="closeImportWordBank" type="button" aria-label="关闭导入词库">×</button>
+        </div>
+        <div class="word-import-panel" aria-label="导入词汇表">
+          <div class="word-import-grid">
+            <label>新词库名称
+              <input id="importBankTitle" placeholder="例如：学校二年级 Unit 1">
+            </label>
+            <label>词库 ID
+              <input id="importBankId" placeholder="可留空，系统自动生成">
+            </label>
+          </div>
+          <label>粘贴词汇表 JSON
+            <textarea id="importWordBankJson" rows="10" placeholder='{"title":"My Word Bank","words":[{"word":"apple","zh":"苹果","ipa":"/ˈæpəl/","pos":"noun"}]}'></textarea>
+          </label>
+          <div class="word-library-controls">
+            <button class="primary-btn" id="importWordBank" type="button">导入词汇表</button>
+            <button class="ghost-btn" id="clearImportWordBank" type="button">清空导入框</button>
+          </div>
+          <p class="fine-print" id="importWordBankStatus">可先点击“导入格式说明”，把格式要求复制给大模型整理词库。</p>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="./app.js?v=20260615-art-gallery-edge-fill"></script>
+  </body>
+</html>

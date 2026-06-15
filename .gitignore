@@ -1,0 +1,8 @@
+.DS_Store
+*.log
+
+# Local private state. May include API settings and user-created data.
+work/private/
+
+# Old local backup, not part of the shipped app.
+_backup_old_phonics_20260614/
