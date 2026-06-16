@@ -92,7 +92,9 @@ Primary use cases:
 - In Song Notes lyric cards, the Chinese translation should be larger than regular explanation text and use a distinct readable color so children can quickly find it.
 - Song Notes word chips inside lyric cards should use child-readable text sizes; do not make per-line vocabulary chips compact.
 - Song Notes' song title/summary area should scroll together with the lyric cards in the study surface. Do not freeze the song title above a separately scrolling lyric list.
-- Song actions should be short but clear: search candidate, analyze song, add to Word Camp.
+- Song Notes should not show a manual "add to Word Camp" button. Successful song analysis should automatically upsert a stable Song Notes word bank, updating an existing bank instead of creating duplicates.
+- Song Notes settings should let users manage Song Notes-generated word banks, including multi-select delete, rename, and merge. These changes must update the same Word Camp word bank state.
+- Song actions should be short but clear: search candidate and analyze song; Word Camp sync is automatic.
 
 ## Kana Quest Specifics
 
@@ -116,7 +118,8 @@ Primary use cases:
 - In "看中文拼单词" mode, missing letters should avoid adjacent gaps whenever the word length allows it.
 - In "看中文拼单词" mode, keep the word card size/proportion consistent with the other Word Camp modes; only the Chinese meaning text should use a smaller wrapping prompt style so long meanings never spill out of the card.
 - Word Camp settings should edit mastery levels with compact level buttons, not a select menu; keep these rows low and comfortable for scanning.
-- Word Camp owns daily word count, VO follow-up, word bank import, word bank switching, word mastery edits, and star reset settings.
+- Word Camp settings should manage all word banks with multi-select delete, rename, and merge. It should also support adding new words and editing word meanings in editable/custom word banks, with results reflected immediately in practice and shared state.
+- Word Camp owns daily word count, VO follow-up, word bank import, word bank switching, word bank management, word mastery edits, and star reset settings.
 
 ## Card Cottage Specifics
 

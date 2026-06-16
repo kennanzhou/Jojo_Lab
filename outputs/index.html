@@ -355,7 +355,6 @@
               <div class="song-action-grid">
                 <button class="ghost-btn" id="findSongCandidates" type="button">搜索候选</button>
                 <button class="primary-btn" id="analyzeSong" type="button">分析歌曲</button>
-                <button class="ghost-btn" id="addSongWordBank" type="button" disabled>加入词库</button>
                 <a class="doc-link" href="./ai-song-integration.md">接入说明</a>
               </div>
               <div class="song-history-panel" id="songHistoryPanel"></div>
@@ -642,6 +641,29 @@
             <button class="ghost-btn danger-btn" id="resetWordStars" type="button">复位星星</button>
             <button class="ghost-btn danger-btn" id="deleteWordBank" type="button">删除当前词库</button>
           </div>
+          <div class="word-bank-manager" id="wordBankManager">
+            <div class="word-bank-manager-head">
+              <strong>词库管理</strong>
+              <span id="wordBankSelectionSummary">未选择词库</span>
+            </div>
+            <div class="word-bank-checklist" id="wordBankChecklist"></div>
+            <div class="word-bank-tool-row">
+              <input id="wordBankNameInput" placeholder="新名称 / 合并后的名称">
+              <button class="ghost-btn" id="renameSelectedBank" type="button">改名</button>
+              <button class="ghost-btn" id="mergeSelectedBanks" type="button">合并</button>
+              <button class="ghost-btn danger-btn" id="deleteSelectedBanks" type="button">删除</button>
+            </div>
+            <div class="word-entry-editor">
+              <label>编辑词库
+                <select id="wordEntryBankSelect"></select>
+              </label>
+              <input id="wordEntryWordInput" placeholder="英文单词 / 短语">
+              <input id="wordEntryZhInput" placeholder="中文释义">
+              <input id="wordEntryIpaInput" placeholder="音标，可选">
+              <input id="wordEntryPosInput" placeholder="词性，可选">
+              <button class="primary-btn" id="upsertWordEntry" type="button">新增 / 修改词条</button>
+            </div>
+          </div>
           <div class="word-library-head">
             <strong id="wordLibraryTitle">词库列表</strong>
             <span class="word-library-legend">
@@ -660,6 +682,7 @@
                   <th>音标</th>
                   <th>释义</th>
                   <th>掌握程度</th>
+                  <th>编辑</th>
                 </tr>
               </thead>
               <tbody id="wordLibraryRows"></tbody>
@@ -712,6 +735,19 @@
           <button class="ghost-btn icon-close" data-close-dialog="songSettingsDialog" type="button" aria-label="关闭 Song 设置">×</button>
         </div>
         <p class="fine-print">已分析歌曲会进入 Song Notes 历史记录，并通过本机共享状态跨终端保存。请只粘贴你拥有或授权用于私下学习的歌词。</p>
+        <div class="word-bank-manager song-bank-manager" id="songBankManager">
+          <div class="word-bank-manager-head">
+            <strong>Song Notes 词库</strong>
+            <span id="songBankSelectionSummary">未选择词库</span>
+          </div>
+          <div class="word-bank-checklist" id="songBankChecklist"></div>
+          <div class="word-bank-tool-row">
+            <input id="songBankNameInput" placeholder="新名称 / 合并后的名称">
+            <button class="ghost-btn" id="renameSelectedSongBank" type="button">改名</button>
+            <button class="ghost-btn" id="mergeSelectedSongBanks" type="button">合并</button>
+            <button class="ghost-btn danger-btn" id="deleteSelectedSongBanks" type="button">删除</button>
+          </div>
+        </div>
       </form>
     </dialog>
 

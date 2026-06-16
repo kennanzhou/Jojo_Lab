@@ -35194,7 +35194,8 @@ function appAssetUrl(src) {
 }
 
 const defaultAppSettings = {
-  wordRepeatVoEnabled: false
+  wordRepeatVoEnabled: false,
+  wordBankTitleOverrides: {}
 };
 
 const defaultOssSettings = {
@@ -35261,6 +35262,8 @@ let loginSubmitting = false;
 let loginDigits = [];
 let loginCountdownTimer = null;
 const demoLocalStore = new Map();
+const selectedWordBankIds = new Set();
+const selectedSongBankIds = new Set();
 const maxProgressRows = 6;
 const minWordsPerBank = 10;
 const wordSmallStarsPerBig = 10;
@@ -35269,10 +35272,11 @@ const kanaSmallStarsPerBig = 12;
 const phonicsSmallStarsPerChallenge = 2;
 const phonicsSmallStarsPerBig = 6;
 
-const wordBankLabels = {
+const baseWordBankLabels = {
   "ket-official": "KET 官方词汇表",
   all: "全部词库"
 };
+const wordBankLabels = { ...baseWordBankLabels };
 
 function saveLocalItem(key, value) {
   if (demoMode) {
@@ -35754,7 +35758,19 @@ function loadAppSettings() {
 function saveAppSettings() {
   state.appSettings = {
     ...defaultAppSettings,
-    wordRepeatVoEnabled: Boolean($("#wordRepeatVoEnabled")?.checked)
+    ...state.appSettings,
+    wordRepeatVoEnabled: Boolean($("#wordRepeatVoEnabled")?.checked),
+    wordBankTitleOverrides: { ...(state.appSettings.wordBankTitleOverrides || {}) }
+  };
+  saveLocalItem("jojoAppSettings", JSON.stringify(state.appSettings));
+  saveSharedState({ appSettings: state.appSettings });
+}
+
+function saveAppSettingsState() {
+  state.appSettings = {
+    ...defaultAppSettings,
+    ...state.appSettings,
+    wordBankTitleOverrides: { ...(state.appSettings.wordBankTitleOverrides || {}) }
   };
   saveLocalItem("jojoAppSettings", JSON.stringify(state.appSettings));
   saveSharedState({ appSettings: state.appSettings });
@@ -36051,8 +36067,13 @@ function saveCustomWordBanks() {
 }
 
 function installCustomWordBankLabels() {
+  Object.keys(wordBankLabels).forEach((bank) => delete wordBankLabels[bank]);
+  Object.assign(wordBankLabels, baseWordBankLabels);
   state.customWordBanks.forEach((bank) => {
     wordBankLabels[bank.id] = bank.title;
+  });
+  Object.entries(state.appSettings.wordBankTitleOverrides || {}).forEach(([bank, title]) => {
+    if (wordBankLabels[bank] && String(title || "").trim()) wordBankLabels[bank] = String(title).trim();
   });
 }
 
@@ -36398,6 +36419,297 @@ function syncWordBankSelect() {
     saveLocalItem("jojoWordBank", state.wordBank);
   }
   select.value = currentWordBank();
+}
+
+function wordBankManagementKeys(scope = "word") {
+  installCustomWordBankLabels();
+  return Object.keys(wordBankLabels)
+    .filter((bank) => bank !== "all" && !isWordBankDeleted(bank))
+    .filter((bank) => scope !== "song" || isSongWordBank(bank));
+}
+
+function isSongWordBank(bank) {
+  const customBank = state.customWordBanks.find((item) => item.id === bank);
+  return String(bank || "").startsWith("song-")
+    || String(customBank?.title || "").startsWith("Song:")
+    || String(customBank?.source || "").toLowerCase().includes("song");
+}
+
+function selectedBankSet(scope = "word") {
+  return scope === "song" ? selectedSongBankIds : selectedWordBankIds;
+}
+
+function bankManagerElements(scope = "word") {
+  return scope === "song"
+    ? {
+        checklist: $("#songBankChecklist"),
+        summary: $("#songBankSelectionSummary"),
+        nameInput: $("#songBankNameInput"),
+        status: $("#songSettingsDialog .fine-print")
+      }
+    : {
+        checklist: $("#wordBankChecklist"),
+        summary: $("#wordBankSelectionSummary"),
+        nameInput: $("#wordBankNameInput"),
+        status: $("#wordSettingsStatus")
+      };
+}
+
+function setBankManagerStatus(scope, message, className = "feedback good") {
+  const target = scope === "song" ? $("#songBankSelectionSummary") : $("#wordSettingsStatus");
+  if (!target) return;
+  target.textContent = message;
+  target.className = scope === "song" ? "" : className;
+}
+
+function wordBankTypeLabel(bank) {
+  return state.customWordBanks.some((item) => item.id === bank) ? "自定义" : "内置";
+}
+
+function bankWords(bank) {
+  return allWords().filter((word) => word.banks.includes(bank));
+}
+
+function renderWordEntryBankSelect() {
+  const select = $("#wordEntryBankSelect");
+  if (!select) return;
+  const banks = wordBankManagementKeys("word");
+  select.innerHTML = banks.map((bank) => `<option value="${escapeHtml(bank)}">${escapeHtml(wordBankLabels[bank] || bank)}</option>`).join("");
+  const preferred = currentWordBank() !== "all" && banks.includes(currentWordBank()) ? currentWordBank() : banks[0];
+  if (preferred) select.value = preferred;
+}
+
+function renderBankManager(scope = "word") {
+  const elements = bankManagerElements(scope);
+  if (!elements.checklist) return;
+  const keys = wordBankManagementKeys(scope);
+  const selected = selectedBankSet(scope);
+  [...selected].forEach((bank) => {
+    if (!keys.includes(bank)) selected.delete(bank);
+  });
+  elements.summary.textContent = selected.size ? `已选择 ${selected.size} 个词库` : "未选择词库";
+  elements.checklist.innerHTML = keys.length ? keys.map((bank) => `
+    <label class="word-bank-check">
+      <input type="checkbox" data-bank="${escapeHtml(bank)}" ${selected.has(bank) ? "checked" : ""}>
+      <span>
+        <strong>${escapeHtml(wordBankLabels[bank] || bank)}</strong>
+        <small>${wordBankTypeLabel(bank)} · ${bankWords(bank).length} 词</small>
+      </span>
+    </label>
+  `).join("") : `<p class="fine-print">${scope === "song" ? "还没有 Song Notes 自动生成的词库。" : "还没有可管理的词库。"}</p>`;
+  elements.checklist.querySelectorAll("input[type='checkbox']").forEach((input) => {
+    input.addEventListener("change", () => {
+      if (input.checked) selected.add(input.dataset.bank);
+      else selected.delete(input.dataset.bank);
+      renderBankManager(scope);
+    });
+  });
+}
+
+function renderWordBankManagers() {
+  renderBankManager("word");
+  renderBankManager("song");
+  renderWordEntryBankSelect();
+}
+
+function uniqueWordBankId(base) {
+  const root = slugifyWordBankId(base);
+  let id = root;
+  let index = 2;
+  while (wordBankLabels[id] || state.customWordBanks.some((bank) => bank.id === id)) {
+    id = `${root}-${index}`;
+    index += 1;
+  }
+  return id;
+}
+
+function persistWordBankCatalog(options = {}) {
+  invalidateWordCaches();
+  installCustomWordBankLabels();
+  repairCurrentWordBank();
+  saveLocalItem("jojoDeletedWordBanks", JSON.stringify(state.deletedWordBanks));
+  saveLocalItem("jojoWordBank", state.wordBank);
+  saveCustomWordBanks();
+  saveAppSettingsState();
+  if (options.progress) persistWordProgress();
+  saveSharedState({
+    deletedWordBanks: state.deletedWordBanks,
+    wordBank: state.wordBank,
+    ...(options.progress ? { wordProgress: state.wordProgress } : {})
+  });
+  syncWordBankSelect();
+  renderWordBankManagers();
+  renderWordStudyState({ library: true, syncSelect: true });
+}
+
+function renameSelectedBanks(scope = "word") {
+  const selected = [...selectedBankSet(scope)];
+  const name = bankManagerElements(scope).nameInput?.value.trim();
+  if (selected.length !== 1) {
+    setBankManagerStatus(scope, "请选择 1 个词库再改名。", "feedback bad");
+    return;
+  }
+  if (!name) {
+    setBankManagerStatus(scope, "请输入新的词库名称。", "feedback bad");
+    return;
+  }
+  const bankId = selected[0];
+  const customBank = state.customWordBanks.find((bank) => bank.id === bankId);
+  if (customBank) customBank.title = name;
+  else state.appSettings.wordBankTitleOverrides = { ...(state.appSettings.wordBankTitleOverrides || {}), [bankId]: name };
+  wordBankLabels[bankId] = name;
+  persistWordBankCatalog();
+  setBankManagerStatus(scope, `已改名为“${name}”。`);
+}
+
+function clearWordProgressForBank(bank) {
+  bankWords(bank).forEach((word) => {
+    ["meaning", "sound", "spelling"].forEach((mode) => {
+      delete state.wordProgress[`${mode}:${bank}:${word.word}`];
+      delete state.wordProgress[`${mode}:${word.word}`];
+    });
+  });
+}
+
+function deleteSelectedBanks(scope = "word") {
+  const selected = [...selectedBankSet(scope)].filter((bank) => bank !== "all");
+  if (!selected.length) {
+    setBankManagerStatus(scope, "请选择要删除的词库。", "feedback bad");
+    return;
+  }
+  const labels = selected.map((bank) => wordBankLabels[bank] || bank).join("、");
+  if (!window.confirm(`确认删除这些词库吗？\n${labels}`)) return;
+  selected.forEach((bank) => {
+    clearWordProgressForBank(bank);
+    const customIndex = state.customWordBanks.findIndex((item) => item.id === bank);
+    if (customIndex >= 0) state.customWordBanks.splice(customIndex, 1);
+    else state.deletedWordBanks = Array.from(new Set([...state.deletedWordBanks, bank]));
+    delete wordBankLabels[bank];
+    if (state.appSettings.wordBankTitleOverrides) delete state.appSettings.wordBankTitleOverrides[bank];
+    selectedWordBankIds.delete(bank);
+    selectedSongBankIds.delete(bank);
+  });
+  state.wordBank = availableWordBankKeys().find((key) => key !== "all" && !selected.includes(key)) || "all";
+  persistWordBankCatalog({ progress: true });
+  newWordQuestion();
+  setBankManagerStatus(scope, `已删除 ${selected.length} 个词库。`);
+}
+
+function cloneWordForCustomBank(word) {
+  const { banks, ...payload } = word;
+  return { ...payload };
+}
+
+function mergeSelectedBanks(scope = "word") {
+  const selected = [...selectedBankSet(scope)];
+  if (selected.length < 2) {
+    setBankManagerStatus(scope, "请选择至少 2 个词库再合并。", "feedback bad");
+    return;
+  }
+  const typedName = bankManagerElements(scope).nameInput?.value.trim();
+  const title = typedName || selected.map((bank) => wordBankLabels[bank] || bank).join(" + ");
+  const id = uniqueWordBankId(`${scope === "song" ? "song-" : ""}merged-${title}`);
+  const seen = new Set();
+  const mergedWords = selected.flatMap(bankWords).filter((word) => {
+    const key = String(word.word || "").toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).map(cloneWordForCustomBank);
+  if (mergedWords.length < minWordsPerBank) {
+    setBankManagerStatus(scope, `合并后只有 ${mergedWords.length} 个有效词条，少于 ${minWordsPerBank} 个。`, "feedback bad");
+    return;
+  }
+  const removedCustomIds = new Set(state.customWordBanks.filter((bank) => selected.includes(bank.id)).map((bank) => bank.id));
+  state.customWordBanks = state.customWordBanks.filter((bank) => !selected.includes(bank.id));
+  state.customWordBanks.push({
+    id,
+    title,
+    source: selected.map((bank) => wordBankLabels[bank] || bank).join(" + "),
+    importedAt: new Date().toISOString(),
+    words: mergedWords
+  });
+  selected.forEach((bank) => {
+    if (state.appSettings.wordBankTitleOverrides) delete state.appSettings.wordBankTitleOverrides[bank];
+    if (removedCustomIds.has(bank)) delete wordBankLabels[bank];
+    selectedWordBankIds.delete(bank);
+    selectedSongBankIds.delete(bank);
+  });
+  wordBankLabels[id] = title;
+  state.wordBank = id;
+  selectedBankSet(scope).add(id);
+  persistWordBankCatalog();
+  newWordQuestion();
+  setBankManagerStatus(scope, `已合并为“${title}”，共 ${mergedWords.length} 个词。`);
+}
+
+function editableWordBankId(bank) {
+  const customBank = state.customWordBanks.find((item) => item.id === bank);
+  if (customBank) return customBank.id;
+  const title = `${wordBankLabels[bank] || bank} · 自定义副本`;
+  const id = uniqueWordBankId(`${bank}-manual`);
+  state.customWordBanks.push({
+    id,
+    title,
+    source: wordBankLabels[bank] || bank,
+    importedAt: new Date().toISOString(),
+    words: bankWords(bank).map(cloneWordForCustomBank)
+  });
+  wordBankLabels[id] = title;
+  state.wordBank = id;
+  return id;
+}
+
+function upsertWordEntryFromForm() {
+  const targetBank = $("#wordEntryBankSelect").value;
+  const wordText = $("#wordEntryWordInput").value.trim();
+  const zh = $("#wordEntryZhInput").value.trim();
+  if (!targetBank || targetBank === "all") {
+    $("#wordSettingsStatus").textContent = "请选择一个具体词库。";
+    $("#wordSettingsStatus").className = "feedback bad";
+    return;
+  }
+  if (!wordText || !zh) {
+    $("#wordSettingsStatus").textContent = "英文和中文释义都要填写。";
+    $("#wordSettingsStatus").className = "feedback bad";
+    return;
+  }
+  const editableBank = editableWordBankId(targetBank);
+  const bank = state.customWordBanks.find((item) => item.id === editableBank);
+  const normalized = normalizeImportedWord({
+    word: wordText,
+    zh,
+    ipa: $("#wordEntryIpaInput").value.trim() || "待补充",
+    pos: $("#wordEntryPosInput").value.trim() || "word",
+    speakText: wordText,
+    spelling: wordText.toLowerCase().replace(/[^a-z]/g, ""),
+    example: "",
+    phonics: [],
+    syllables: [],
+    distractors: []
+  }, editableBank, bank.words.length, [zh]);
+  if (!normalized) return;
+  const existingIndex = bank.words.findIndex((item) => String(item.word || "").toLowerCase() === normalized.word.toLowerCase());
+  const { banks, ...wordPayload } = normalized;
+  if (existingIndex >= 0) bank.words[existingIndex] = wordPayload;
+  else bank.words.push(wordPayload);
+  persistWordBankCatalog();
+  $("#wordEntryBankSelect").value = editableBank;
+  $("#wordSettingsStatus").textContent = existingIndex >= 0 ? `已修改“${wordPayload.word}”。` : `已新增“${wordPayload.word}”。`;
+  $("#wordSettingsStatus").className = "feedback good";
+}
+
+function fillWordEntryEditor(wordText) {
+  const bank = currentWordBank() !== "all" ? currentWordBank() : ($("#wordEntryBankSelect").value || wordBankManagementKeys("word")[0]);
+  const word = bankWords(bank).find((item) => item.word === wordText) || allWords().find((item) => item.word === wordText);
+  if (!word) return;
+  $("#wordEntryBankSelect").value = bank;
+  $("#wordEntryWordInput").value = word.word || "";
+  $("#wordEntryZhInput").value = word.zh || "";
+  $("#wordEntryIpaInput").value = word.ipa || "";
+  $("#wordEntryPosInput").value = word.pos || "";
+  $("#wordSettingsStatus").textContent = `正在编辑“${word.word}”。`;
+  $("#wordSettingsStatus").className = "feedback";
 }
 
 function wordsForSelectedBank() {
@@ -36999,6 +37311,7 @@ function fillWordSettingsForm() {
   $("#dailyWordCount").value = String(normalizeDailyWordCount(state.dailyWordCount));
   fillAppSettingsForm();
   syncWordBankSelect();
+  renderWordBankManagers();
   renderWordLibrary();
   $("#wordSettingsStatus").textContent = "Word Camp 设置会跨终端共享。";
   $("#wordSettingsStatus").className = "feedback";
@@ -37022,6 +37335,7 @@ function openWordSettings() {
 
 function openModuleDialog(dialogId) {
   const dialog = $(`#${dialogId}`);
+  if (dialogId === "songSettingsDialog") renderBankManager("song");
   if (dialog) dialog.showModal();
 }
 
@@ -37272,7 +37586,8 @@ function closeWordSettings() {
 }
 
 function currentViewId() {
-  return location.hash.replace("#", "") || "home";
+  const raw = location.hash.replace("#", "").split("?")[0].trim();
+  return /^[a-z][a-z0-9-]*$/i.test(raw) ? raw : "home";
 }
 
 function updateBrandAction() {
@@ -37319,7 +37634,8 @@ function handleBrandClick() {
 
 function setView() {
   const requestedId = currentViewId();
-  const id = $(`#${requestedId}`) ? requestedId : "home";
+  const requestedView = document.getElementById(requestedId);
+  const id = requestedView?.classList.contains("view") ? requestedId : "home";
   $all(".view").forEach((view) => view.classList.toggle("active", view.id === id));
   updateBrandAction();
   updateActiveSettingsButton();
@@ -37545,6 +37861,7 @@ function renderWordLibrary() {
             ${masteryButtonsHtml(word, level)}
           </div>
         </td>
+        <td><button class="ghost-btn word-edit-mini" type="button" data-word="${escapeHtml(word.word)}">编辑</button></td>
       </tr>
     `;
   }).join("");
@@ -37555,6 +37872,9 @@ function renderWordLibrary() {
     button.addEventListener("click", () => {
       setWordMastery(button.dataset.word, button.dataset.level);
     });
+  });
+  $all(".word-edit-mini").forEach((button) => {
+    button.addEventListener("click", () => fillWordEntryEditor(button.dataset.word));
   });
 }
 
@@ -38725,7 +39045,6 @@ function renderSongEmpty() {
   $("#songStatus").textContent = "";
   $("#songStatus").className = "feedback";
   clearSongCandidates({ clearSelectedSong: true });
-  $("#addSongWordBank").disabled = true;
   renderSongHistory();
   $("#songLines").innerHTML = `
     <article class="song-line-card">
@@ -38743,13 +39062,12 @@ function renderSongAnalysisProgress(payload, stage = "正在分析歌曲", optio
   const detail = options.detail || "正在整理歌曲介绍、逐句解释和 Word Camp 词库。";
   const steps = Array.isArray(options.steps) && options.steps.length
     ? options.steps
-    : ["歌曲信息", "逐句解释", "词库候选"];
+    : ["歌曲信息", "逐句解释", "自动同步词库"];
   const lyricLabel = lyricCount ? `${lyricCount} 句歌词 · ` : "";
   state.songAnalysis = null;
   state.activeSongHistoryId = "";
   $("#songStudyTitle").textContent = title;
   $("#songStudyMeta").textContent = `${artist ? artist + " · " : ""}${lyricLabel}${metaSuffix}`;
-  $("#addSongWordBank").disabled = true;
   clearSongCandidates({ clearSelectedSong: options.clearSelectedSong === true });
   $("#songStatus").textContent = stage;
   $("#songStatus").className = "feedback";
@@ -38774,7 +39092,6 @@ function renderSongCandidateResult(payload, candidates, notice = "") {
   const found = candidates.length;
   $("#songStudyTitle").textContent = title;
   $("#songStudyMeta").textContent = `${artist ? artist + " · " : ""}${found ? `找到 ${found} 个候选` : "候选搜索未命中"}`;
-  $("#addSongWordBank").disabled = true;
   $("#songLines").innerHTML = `
     <article class="song-line-card">
       <strong class="lyric-line">${found ? "选择候选歌曲" : "还没有明确候选"}</strong>
@@ -39008,8 +39325,7 @@ function renderSongAnalysis(data) {
   const isFallbackDraft = Boolean(data.isFallbackDraft);
   state.songAnalysis = data;
   $("#songStudyTitle").textContent = title;
-  $("#songStudyMeta").textContent = `${artist ? artist + " · " : ""}${lines.length} 句 · ${isFallbackDraft ? "临时学习卡" : `${vocabulary.length} 个词库候选`}`;
-  $("#addSongWordBank").disabled = isFallbackDraft || vocabulary.length < minWordsPerBank;
+  $("#songStudyMeta").textContent = `${artist ? artist + " · " : ""}${lines.length} 句 · ${isFallbackDraft ? "临时学习卡" : `${vocabulary.length} 个词库词条`}`;
 
   if (!lines.length) {
     renderSongEmpty();
@@ -39064,8 +39380,8 @@ function renderSongAnalysis(data) {
 
   const vocabularyHtml = vocabulary.length ? `
     <article class="song-line-card song-vocab-card">
-      <strong>Word Camp 词库候选</strong>
-      <p class="translation-line">${vocabulary.length} 个不重复词条；点击“加入 Word Camp 词库”后会成为独立词库。</p>
+      <strong>Word Camp 词库词条</strong>
+      <p class="translation-line">${vocabulary.length} 个不重复词条；分析完成后会自动同步到 Word Camp。</p>
       <div class="word-chip-grid">
         ${vocabulary.map((item) => `
           <button class="word-chip" type="button" data-word="${escapeHtml(item.word || item.lemma || "")}">
@@ -39161,7 +39477,7 @@ async function requestSongCandidates() {
 function songVocabularyToWordBank() {
   const analysis = state.songAnalysis;
   const vocabulary = Array.isArray(analysis?.vocabulary) ? analysis.vocabulary : [];
-  if (!vocabulary.length) throw new Error("还没有可加入词库的词条。请先分析歌曲。");
+  if (!vocabulary.length) throw new Error("还没有可同步到词库的词条。请先分析歌曲。");
   const title = analysis.title || $("#songTitle").value.trim() || "Song Notes";
   const artist = analysis.artist || $("#songArtist").value.trim();
   const bankId = slugifyWordBankId(`song-${artist || "unknown"}-${title}`);
@@ -39197,26 +39513,24 @@ function songVocabularyToWordBank() {
   };
 }
 
-function addSongAnalysisToWordCamp() {
-  try {
-    const bank = songVocabularyToWordBank();
-    state.customWordBanks = state.customWordBanks.filter((item) => item.id !== bank.id);
+function upsertSongAnalysisWordBank() {
+  const bank = songVocabularyToWordBank();
+  const existingIndex = state.customWordBanks.findIndex((item) => item.id === bank.id);
+  if (existingIndex >= 0) {
+    state.customWordBanks[existingIndex] = bank;
+  } else {
     state.customWordBanks.push(bank);
-    wordBankLabels[bank.id] = bank.title;
-    state.deletedWordBanks = state.deletedWordBanks.filter((id) => id !== bank.id);
-    state.wordBank = bank.id;
-    saveLocalItem("jojoDeletedWordBanks", JSON.stringify(state.deletedWordBanks));
-    saveLocalItem("jojoWordBank", state.wordBank);
-    saveCustomWordBanks();
-    syncWordBankSelect();
-    renderWordStudyState({ library: true, syncSelect: true });
-    newWordQuestion();
-    $("#songStatus").textContent = `已加入 Word Camp：“${bank.title}”，共 ${bank.words.length} 个词条。`;
-    $("#songStatus").className = "feedback good";
-  } catch (error) {
-    $("#songStatus").textContent = error.message;
-    $("#songStatus").className = "feedback bad";
   }
+  wordBankLabels[bank.id] = bank.title;
+  state.deletedWordBanks = state.deletedWordBanks.filter((id) => id !== bank.id);
+  state.wordBank = bank.id;
+  saveLocalItem("jojoDeletedWordBanks", JSON.stringify(state.deletedWordBanks));
+  saveLocalItem("jojoWordBank", state.wordBank);
+  saveCustomWordBanks();
+  syncWordBankSelect();
+  renderWordStudyState({ library: true, syncSelect: true });
+  newWordQuestion();
+  return { bank, updated: existingIndex >= 0 };
 }
 
 async function requestSongAnalysis() {
@@ -39239,6 +39553,16 @@ async function requestSongAnalysis() {
     $("#songStatus").className = "feedback good";
     renderSongAnalysis(data);
     persistSongAnalysis(data, payload);
+    try {
+      const { bank, updated } = upsertSongAnalysisWordBank();
+      $("#songStatus").textContent = updated
+        ? `大模型分析完成，已更新 Word Camp：“${bank.title}”，共 ${bank.words.length} 个词条。`
+        : `大模型分析完成，已自动加入 Word Camp：“${bank.title}”，共 ${bank.words.length} 个词条。`;
+      $("#songStatus").className = "feedback good";
+    } catch (error) {
+      $("#songStatus").textContent = `大模型分析完成，但自动加入词库失败：${error.message}`;
+      $("#songStatus").className = "feedback bad";
+    }
   } catch (error) {
     if (!isCurrentSongWorkflow(workflowVersion)) return;
     if (/没有返回 JSON|JSON 格式|JSON 对象|not valid JSON|Unexpected end/i.test(error.message)) {
@@ -39918,6 +40242,13 @@ function bindEvents() {
   $("#resetWordBank").addEventListener("click", resetCurrentWordBank);
   $("#resetWordStars").addEventListener("click", resetWordStars);
   $("#deleteWordBank").addEventListener("click", deleteCurrentWordBank);
+  $("#renameSelectedBank").addEventListener("click", () => renameSelectedBanks("word"));
+  $("#mergeSelectedBanks").addEventListener("click", () => mergeSelectedBanks("word"));
+  $("#deleteSelectedBanks").addEventListener("click", () => deleteSelectedBanks("word"));
+  $("#renameSelectedSongBank").addEventListener("click", () => renameSelectedBanks("song"));
+  $("#mergeSelectedSongBanks").addEventListener("click", () => mergeSelectedBanks("song"));
+  $("#deleteSelectedSongBanks").addEventListener("click", () => deleteSelectedBanks("song"));
+  $("#upsertWordEntry").addEventListener("click", upsertWordEntryFromForm);
   $("#openImportGuide").addEventListener("click", openImportGuide);
   $("#closeImportGuide").addEventListener("click", closeImportGuide);
   $("#importGuideDialog").addEventListener("click", (event) => {
@@ -40016,7 +40347,6 @@ function bindEvents() {
   $("#phonicsChallengeButton").addEventListener("click", completePhonicsChallenge);
   $("#findSongCandidates").addEventListener("click", requestSongCandidates);
   $("#analyzeSong").addEventListener("click", requestSongAnalysis);
-  $("#addSongWordBank").addEventListener("click", addSongAnalysisToWordCamp);
   $("#speakSongAll").addEventListener("click", speakSongAll);
   $("#artForm").addEventListener("submit", addArtwork);
   installArtUploadInteractions();

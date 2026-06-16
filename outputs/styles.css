@@ -4055,8 +4055,8 @@ label:has(select) {
 }
 
 .settings-word-library {
-  max-height: min(46dvh, 430px) !important;
-  grid-template-rows: auto auto auto minmax(0, 1fr) !important;
+  max-height: min(62dvh, 660px) !important;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr) !important;
   border: 2px solid rgba(201, 74, 46, 0.34);
   border-radius: var(--retro-radius);
   background: rgba(255, 248, 223, 0.58);
@@ -4068,6 +4068,96 @@ label:has(select) {
   grid-template-columns: minmax(180px, 1fr) auto auto auto;
   align-items: end;
   gap: 10px;
+}
+
+.word-bank-manager {
+  display: grid;
+  gap: 10px;
+  border: 2px solid rgba(111, 51, 40, 0.22);
+  border-radius: var(--retro-radius);
+  background: rgba(255, 253, 242, 0.74);
+  padding: 10px;
+}
+
+.word-bank-manager-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--retro-brown);
+  font-weight: 900;
+}
+
+.word-bank-checklist {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px;
+  max-height: 178px;
+  overflow: auto;
+}
+
+.word-bank-check {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  min-height: 54px;
+  border: 2px solid rgba(201, 74, 46, 0.22);
+  border-radius: 8px;
+  background: #fffdf2;
+  padding: 8px 10px;
+  color: var(--retro-brown);
+  font-size: 15px;
+}
+
+.word-bank-check input {
+  width: 22px;
+  height: 22px;
+}
+
+.word-bank-check strong,
+.word-bank-check small {
+  display: block;
+  min-width: 0;
+}
+
+.word-bank-check small {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.word-bank-tool-row,
+.word-entry-editor {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) repeat(3, auto);
+  gap: 8px;
+  align-items: end;
+}
+
+.word-entry-editor {
+  grid-template-columns: minmax(150px, 0.9fr) minmax(120px, 1fr) minmax(140px, 1fr) minmax(110px, 0.7fr) minmax(100px, 0.7fr) auto;
+}
+
+.word-edit-mini {
+  min-height: 30px;
+  padding: 4px 8px;
+  font-size: 13px;
+}
+
+.song-bank-manager {
+  margin-top: 12px;
+}
+
+@media (max-width: 980px) {
+  .word-library-controls,
+  .word-bank-tool-row,
+  .word-entry-editor {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .word-bank-tool-row input,
+  .word-entry-editor label {
+    grid-column: 1 / -1;
+  }
 }
 
 .word-import-panel {
