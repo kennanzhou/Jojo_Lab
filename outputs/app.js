@@ -35194,7 +35194,8 @@ function appAssetUrl(src) {
 }
 
 const defaultAppSettings = {
-  wordRepeatVoEnabled: false
+  wordRepeatVoEnabled: false,
+  wordBankTitleOverrides: {}
 };
 
 const defaultOssSettings = {
@@ -35261,6 +35262,9 @@ let loginSubmitting = false;
 let loginDigits = [];
 let loginCountdownTimer = null;
 const demoLocalStore = new Map();
+const selectedWordBankIds = new Set();
+const selectedSongBankIds = new Set();
+let activeTopbarAction = null;
 const maxProgressRows = 6;
 const minWordsPerBank = 10;
 const wordSmallStarsPerBig = 10;
@@ -35269,10 +35273,11 @@ const kanaSmallStarsPerBig = 12;
 const phonicsSmallStarsPerChallenge = 2;
 const phonicsSmallStarsPerBig = 6;
 
-const wordBankLabels = {
+const baseWordBankLabels = {
   "ket-official": "KET 官方词汇表",
   all: "全部词库"
 };
+const wordBankLabels = { ...baseWordBankLabels };
 
 function saveLocalItem(key, value) {
   if (demoMode) {
@@ -35441,6 +35446,7 @@ const state = {
   dailyWordCount: normalizeDailyWordCount(localStorage.getItem("jojoDailyWordCount") || 20),
   dailyWordPlan: loadDailyWordPlan(),
   wordProgress: loadWordProgress(),
+  globalRewards: loadGlobalRewards(),
   wordRewards: loadWordRewards(),
   customWordBanks: loadCustomWordBanks(),
   deletedWordBanks: JSON.parse(localStorage.getItem("jojoDeletedWordBanks") || "[]"),
@@ -35729,16 +35735,69 @@ function persistWordProgress(changedKey = "") {
   }
 }
 
-function loadWordRewards() {
-  const fallback = { smallStars: 0, bigStars: 0 };
+function readLocalJson(key, fallback = {}) {
   try {
-    return { ...fallback, ...JSON.parse(localStorage.getItem("jojoWordRewards") || "{}") };
+    const value = JSON.parse(localStorage.getItem(key) || "null");
+    return value && typeof value === "object" ? value : fallback;
   } catch {
     return fallback;
   }
 }
 
+function rewardNumber(value) {
+  return Math.max(0, Number(value || 0));
+}
+
+function legacyModuleBigStars(...items) {
+  return items.reduce((total, item) => total + rewardNumber(item?.bigStars), 0);
+}
+
+function normalizeGlobalRewards(value = {}, legacyBigStars = 0) {
+  value = value && typeof value === "object" ? value : {};
+  const rewards = {
+    bigStars: rewardNumber(value.bigStars),
+    migratedModuleBigStars: Boolean(value.migratedModuleBigStars)
+  };
+  if (!rewards.migratedModuleBigStars) {
+    rewards.bigStars += rewardNumber(legacyBigStars);
+    rewards.migratedModuleBigStars = true;
+  }
+  return rewards;
+}
+
+function loadGlobalRewards() {
+  const stored = readLocalJson("jojoGlobalRewards", {});
+  const legacyBigStars = legacyModuleBigStars(
+    readLocalJson("jojoWordRewards", {}),
+    readLocalJson("jojoKanaRewards", {}),
+    readLocalJson("jojoPhonicsRewards", {})
+  );
+  return normalizeGlobalRewards(stored, legacyBigStars);
+}
+
+function persistGlobalRewards() {
+  state.globalRewards = normalizeGlobalRewards(state.globalRewards, 0);
+  saveLocalItem("jojoGlobalRewards", JSON.stringify(state.globalRewards));
+  saveSharedState({ globalRewards: state.globalRewards });
+}
+
+function normalizeWordRewards(value = {}) {
+  return {
+    smallStars: rewardNumber(value.smallStars),
+    bigStars: 0
+  };
+}
+
+function loadWordRewards() {
+  try {
+    return normalizeWordRewards(JSON.parse(localStorage.getItem("jojoWordRewards") || "{}"));
+  } catch {
+    return normalizeWordRewards();
+  }
+}
+
 function persistWordRewards() {
+  state.wordRewards = normalizeWordRewards(state.wordRewards);
   saveLocalItem("jojoWordRewards", JSON.stringify(state.wordRewards));
   saveSharedState({ wordRewards: state.wordRewards });
 }
@@ -35754,7 +35813,19 @@ function loadAppSettings() {
 function saveAppSettings() {
   state.appSettings = {
     ...defaultAppSettings,
-    wordRepeatVoEnabled: Boolean($("#wordRepeatVoEnabled")?.checked)
+    ...state.appSettings,
+    wordRepeatVoEnabled: Boolean($("#wordRepeatVoEnabled")?.checked),
+    wordBankTitleOverrides: { ...(state.appSettings.wordBankTitleOverrides || {}) }
+  };
+  saveLocalItem("jojoAppSettings", JSON.stringify(state.appSettings));
+  saveSharedState({ appSettings: state.appSettings });
+}
+
+function saveAppSettingsState() {
+  state.appSettings = {
+    ...defaultAppSettings,
+    ...state.appSettings,
+    wordBankTitleOverrides: { ...(state.appSettings.wordBankTitleOverrides || {}) }
   };
   saveLocalItem("jojoAppSettings", JSON.stringify(state.appSettings));
   saveSharedState({ appSettings: state.appSettings });
@@ -35781,8 +35852,8 @@ function persistKanaProgress() {
 
 function normalizeKanaRewards(value = {}) {
   return {
-    smallStars: Math.max(0, Number(value.smallStars || 0)),
-    bigStars: Math.max(0, Number(value.bigStars || 0)),
+    smallStars: rewardNumber(value.smallStars),
+    bigStars: 0,
     masteryCredits: Math.max(0, Math.min(kanaMasteriesPerSmallStar - 1, Number(value.masteryCredits || 0))),
     awardedKeys: Array.isArray(value.awardedKeys) ? value.awardedKeys.map(String) : []
   };
@@ -35913,45 +35984,70 @@ function dailyWords() {
   return wordsForSelectedBank().filter((word) => planSet.has(word.word));
 }
 
+function globalBigStars() {
+  return rewardNumber(state.globalRewards?.bigStars);
+}
+
+function renderBigStarTray(selector) {
+  const tray = $(selector);
+  if (!tray) return;
+  const bigStars = globalBigStars();
+  const visibleBigStars = Math.min(bigStars, 4);
+  tray.innerHTML = bigStars
+    ? `${Array.from({ length: visibleBigStars }, () => `<img src="./assets/gold-star-reward.png" alt="大星星">`).join("")}${bigStars > visibleBigStars ? `<span class="star-more">+${bigStars - visibleBigStars}</span>` : ""}`
+    : "";
+  tray.setAttribute("aria-label", `全局大星星 ${bigStars} 颗`);
+}
+
+function renderGlobalRewards() {
+  ["#wordBigStarTray", "#kanaBigStarTray", "#phonicsBigStarTray"].forEach(renderBigStarTray);
+  const bigStars = globalBigStars();
+  if ($("#cardhouseBigStarCount")) $("#cardhouseBigStarCount").textContent = String(bigStars);
+  if ($(".cardhouse-star-bank")) $(".cardhouse-star-bank").setAttribute("aria-label", `当前全局大金星 ${bigStars} 颗`);
+}
+
 function renderStarRewards(rewards, smallTraySelector, bigTraySelector, smallStarsPerBig) {
   const smallTray = $(smallTraySelector);
   const bigTray = $(bigTraySelector);
   if (!smallTray || !bigTray) return;
   const smallStars = Math.max(0, Math.min(smallStarsPerBig - 1, Number(rewards?.smallStars || 0)));
-  const bigStars = Math.max(0, Number(rewards?.bigStars || 0));
   smallTray.innerHTML = `${Array.from({ length: smallStars }, () => `
     <img src="./assets/gold-star-reward-small.png" alt="小星星">
   `).join("")}<span class="star-progress-text">${smallStars}/${smallStarsPerBig}</span>`;
-  const visibleBigStars = Math.min(bigStars, 4);
-  bigTray.innerHTML = bigStars
-    ? `${Array.from({ length: visibleBigStars }, () => `<img src="./assets/gold-star-reward.png" alt="大星星">`).join("")}${bigStars > visibleBigStars ? `<span class="star-more">+${bigStars - visibleBigStars}</span>` : ""}`
-    : "";
+  renderBigStarTray(bigTraySelector);
 }
 
 function renderWordRewards() {
-  state.wordRewards = { smallStars: 0, bigStars: 0, ...state.wordRewards };
+  state.wordRewards = normalizeWordRewards(state.wordRewards);
   renderStarRewards(state.wordRewards, "#wordSmallStarTray", "#wordBigStarTray", wordSmallStarsPerBig);
-  const bigStars = Math.max(0, Number(state.wordRewards?.bigStars || 0));
-  if ($("#cardhouseBigStarCount")) $("#cardhouseBigStarCount").textContent = String(bigStars);
+  renderGlobalRewards();
 }
 
 function renderKanaRewards() {
   state.kanaRewards = normalizeKanaRewards(state.kanaRewards);
   renderStarRewards(state.kanaRewards, "#kanaSmallStarTray", "#kanaBigStarTray", kanaSmallStarsPerBig);
+  renderGlobalRewards();
 }
 
 function renderPhonicsRewards() {
   state.phonicsRewards = normalizePhonicsRewards(state.phonicsRewards);
   renderStarRewards(state.phonicsRewards, "#phonicsSmallStarTray", "#phonicsBigStarTray", phonicsSmallStarsPerBig);
+  renderGlobalRewards();
+}
+
+function addGlobalBigStars(amount = 1) {
+  state.globalRewards = normalizeGlobalRewards(state.globalRewards, 0);
+  state.globalRewards.bigStars += rewardNumber(amount);
+  state.globalRewards.migratedModuleBigStars = true;
 }
 
 function awardSmallStars(rewards, amount, smallStarsPerBig) {
   rewards.smallStars = Math.max(0, Number(rewards.smallStars || 0)) + amount;
-  rewards.bigStars = Math.max(0, Number(rewards.bigStars || 0));
+  rewards.bigStars = 0;
   let earned = amount > 0 ? "small" : "";
   while (rewards.smallStars >= smallStarsPerBig) {
     rewards.smallStars -= smallStarsPerBig;
-    rewards.bigStars += 1;
+    addGlobalBigStars(1);
     earned = "big";
   }
   return earned;
@@ -35992,13 +36088,14 @@ function animatePhonicsStarReward(type) {
 }
 
 function awardWordMasteryReward() {
-  state.wordRewards = { smallStars: 0, bigStars: 0, ...state.wordRewards };
+  state.wordRewards = normalizeWordRewards(state.wordRewards);
   const earned = awardSmallStars(state.wordRewards, 1, wordSmallStarsPerBig);
   persistWordRewards();
+  if (earned === "big") persistGlobalRewards();
   renderWordRewards();
   playStarCue(earned);
   animateWordStarReward(earned);
-  showToast(earned === "big" ? "10 颗小星合成 1 颗大星！" : "单词达到 3 分，获得 1 颗小星！", "good");
+  showToast(earned === "big" ? "10 颗 Word Camp 小星合成 1 颗全局大星！" : "单词达到 3 分，获得 1 颗 Word Camp 小星！", "good");
 }
 
 function awardKanaMasteryReward(progressKey) {
@@ -36012,11 +36109,12 @@ function awardKanaMasteryReward(progressKey) {
     earned = awardSmallStars(state.kanaRewards, 1, kanaSmallStarsPerBig);
   }
   persistKanaRewards();
+  if (earned === "big") persistGlobalRewards();
   renderKanaRewards();
   if (earned) {
     playStarCue(earned);
     animateKanaStarReward(earned);
-    showToast(earned === "big" ? "Kana 12 颗小星合成 1 颗大星！" : "新掌握 2 个假名，获得 1 颗小星！", "good");
+    showToast(earned === "big" ? "Kana 12 颗小星合成 1 颗全局大星！" : "新掌握 2 个假名，获得 1 颗 Kana 小星！", "good");
   } else {
     showToast("新掌握 1 个假名，再掌握 1 个换小星。", "good");
   }
@@ -36028,10 +36126,11 @@ function awardPhonicsChallengeReward(unitIndex) {
   state.phonicsRewards.awardedUnits.push(unitIndex);
   const earned = awardSmallStars(state.phonicsRewards, phonicsSmallStarsPerChallenge, phonicsSmallStarsPerBig);
   persistPhonicsRewards();
+  if (earned === "big") persistGlobalRewards();
   renderPhonicsRewards();
   playStarCue(earned);
   animatePhonicsStarReward(earned);
-  showToast(earned === "big" ? "Phonics 6 颗小星合成 1 颗大星！" : "完成单元挑战，获得 2 颗小星！", "good");
+  showToast(earned === "big" ? "Phonics 6 颗小星合成 1 颗全局大星！" : "完成单元挑战，获得 2 颗 Phonics 小星！", "good");
 }
 
 
@@ -36051,8 +36150,13 @@ function saveCustomWordBanks() {
 }
 
 function installCustomWordBankLabels() {
+  Object.keys(wordBankLabels).forEach((bank) => delete wordBankLabels[bank]);
+  Object.assign(wordBankLabels, baseWordBankLabels);
   state.customWordBanks.forEach((bank) => {
     wordBankLabels[bank.id] = bank.title;
+  });
+  Object.entries(state.appSettings.wordBankTitleOverrides || {}).forEach(([bank, title]) => {
+    if (wordBankLabels[bank] && String(title || "").trim()) wordBankLabels[bank] = String(title).trim();
   });
 }
 
@@ -36398,6 +36502,297 @@ function syncWordBankSelect() {
     saveLocalItem("jojoWordBank", state.wordBank);
   }
   select.value = currentWordBank();
+}
+
+function wordBankManagementKeys(scope = "word") {
+  installCustomWordBankLabels();
+  return Object.keys(wordBankLabels)
+    .filter((bank) => bank !== "all" && !isWordBankDeleted(bank))
+    .filter((bank) => scope !== "song" || isSongWordBank(bank));
+}
+
+function isSongWordBank(bank) {
+  const customBank = state.customWordBanks.find((item) => item.id === bank);
+  return String(bank || "").startsWith("song-")
+    || String(customBank?.title || "").startsWith("Song:")
+    || String(customBank?.source || "").toLowerCase().includes("song");
+}
+
+function selectedBankSet(scope = "word") {
+  return scope === "song" ? selectedSongBankIds : selectedWordBankIds;
+}
+
+function bankManagerElements(scope = "word") {
+  return scope === "song"
+    ? {
+        checklist: $("#songBankChecklist"),
+        summary: $("#songBankSelectionSummary"),
+        nameInput: $("#songBankNameInput"),
+        status: $("#songSettingsDialog .fine-print")
+      }
+    : {
+        checklist: $("#wordBankChecklist"),
+        summary: $("#wordBankSelectionSummary"),
+        nameInput: $("#wordBankNameInput"),
+        status: $("#wordSettingsStatus")
+      };
+}
+
+function setBankManagerStatus(scope, message, className = "feedback good") {
+  const target = scope === "song" ? $("#songBankSelectionSummary") : $("#wordSettingsStatus");
+  if (!target) return;
+  target.textContent = message;
+  target.className = scope === "song" ? "" : className;
+}
+
+function wordBankTypeLabel(bank) {
+  return state.customWordBanks.some((item) => item.id === bank) ? "自定义" : "内置";
+}
+
+function bankWords(bank) {
+  return allWords().filter((word) => word.banks.includes(bank));
+}
+
+function renderWordEntryBankSelect() {
+  const select = $("#wordEntryBankSelect");
+  if (!select) return;
+  const banks = wordBankManagementKeys("word");
+  select.innerHTML = banks.map((bank) => `<option value="${escapeHtml(bank)}">${escapeHtml(wordBankLabels[bank] || bank)}</option>`).join("");
+  const preferred = currentWordBank() !== "all" && banks.includes(currentWordBank()) ? currentWordBank() : banks[0];
+  if (preferred) select.value = preferred;
+}
+
+function renderBankManager(scope = "word") {
+  const elements = bankManagerElements(scope);
+  if (!elements.checklist) return;
+  const keys = wordBankManagementKeys(scope);
+  const selected = selectedBankSet(scope);
+  [...selected].forEach((bank) => {
+    if (!keys.includes(bank)) selected.delete(bank);
+  });
+  elements.summary.textContent = selected.size ? `已选择 ${selected.size} 个词库` : "未选择词库";
+  elements.checklist.innerHTML = keys.length ? keys.map((bank) => `
+    <label class="word-bank-check">
+      <input type="checkbox" data-bank="${escapeHtml(bank)}" ${selected.has(bank) ? "checked" : ""}>
+      <span>
+        <strong>${escapeHtml(wordBankLabels[bank] || bank)}</strong>
+        <small>${wordBankTypeLabel(bank)} · ${bankWords(bank).length} 词</small>
+      </span>
+    </label>
+  `).join("") : `<p class="fine-print">${scope === "song" ? "还没有 Song Notes 自动生成的词库。" : "还没有可管理的词库。"}</p>`;
+  elements.checklist.querySelectorAll("input[type='checkbox']").forEach((input) => {
+    input.addEventListener("change", () => {
+      if (input.checked) selected.add(input.dataset.bank);
+      else selected.delete(input.dataset.bank);
+      renderBankManager(scope);
+    });
+  });
+}
+
+function renderWordBankManagers() {
+  renderBankManager("word");
+  renderBankManager("song");
+  renderWordEntryBankSelect();
+}
+
+function uniqueWordBankId(base) {
+  const root = slugifyWordBankId(base);
+  let id = root;
+  let index = 2;
+  while (wordBankLabels[id] || state.customWordBanks.some((bank) => bank.id === id)) {
+    id = `${root}-${index}`;
+    index += 1;
+  }
+  return id;
+}
+
+function persistWordBankCatalog(options = {}) {
+  invalidateWordCaches();
+  installCustomWordBankLabels();
+  repairCurrentWordBank();
+  saveLocalItem("jojoDeletedWordBanks", JSON.stringify(state.deletedWordBanks));
+  saveLocalItem("jojoWordBank", state.wordBank);
+  saveCustomWordBanks();
+  saveAppSettingsState();
+  if (options.progress) persistWordProgress();
+  saveSharedState({
+    deletedWordBanks: state.deletedWordBanks,
+    wordBank: state.wordBank,
+    ...(options.progress ? { wordProgress: state.wordProgress } : {})
+  });
+  syncWordBankSelect();
+  renderWordBankManagers();
+  renderWordStudyState({ library: true, syncSelect: true });
+}
+
+function renameSelectedBanks(scope = "word") {
+  const selected = [...selectedBankSet(scope)];
+  const name = bankManagerElements(scope).nameInput?.value.trim();
+  if (selected.length !== 1) {
+    setBankManagerStatus(scope, "请选择 1 个词库再改名。", "feedback bad");
+    return;
+  }
+  if (!name) {
+    setBankManagerStatus(scope, "请输入新的词库名称。", "feedback bad");
+    return;
+  }
+  const bankId = selected[0];
+  const customBank = state.customWordBanks.find((bank) => bank.id === bankId);
+  if (customBank) customBank.title = name;
+  else state.appSettings.wordBankTitleOverrides = { ...(state.appSettings.wordBankTitleOverrides || {}), [bankId]: name };
+  wordBankLabels[bankId] = name;
+  persistWordBankCatalog();
+  setBankManagerStatus(scope, `已改名为“${name}”。`);
+}
+
+function clearWordProgressForBank(bank) {
+  bankWords(bank).forEach((word) => {
+    ["meaning", "sound", "spelling"].forEach((mode) => {
+      delete state.wordProgress[`${mode}:${bank}:${word.word}`];
+      delete state.wordProgress[`${mode}:${word.word}`];
+    });
+  });
+}
+
+function deleteSelectedBanks(scope = "word") {
+  const selected = [...selectedBankSet(scope)].filter((bank) => bank !== "all");
+  if (!selected.length) {
+    setBankManagerStatus(scope, "请选择要删除的词库。", "feedback bad");
+    return;
+  }
+  const labels = selected.map((bank) => wordBankLabels[bank] || bank).join("、");
+  if (!window.confirm(`确认删除这些词库吗？\n${labels}`)) return;
+  selected.forEach((bank) => {
+    clearWordProgressForBank(bank);
+    const customIndex = state.customWordBanks.findIndex((item) => item.id === bank);
+    if (customIndex >= 0) state.customWordBanks.splice(customIndex, 1);
+    else state.deletedWordBanks = Array.from(new Set([...state.deletedWordBanks, bank]));
+    delete wordBankLabels[bank];
+    if (state.appSettings.wordBankTitleOverrides) delete state.appSettings.wordBankTitleOverrides[bank];
+    selectedWordBankIds.delete(bank);
+    selectedSongBankIds.delete(bank);
+  });
+  state.wordBank = availableWordBankKeys().find((key) => key !== "all" && !selected.includes(key)) || "all";
+  persistWordBankCatalog({ progress: true });
+  newWordQuestion();
+  setBankManagerStatus(scope, `已删除 ${selected.length} 个词库。`);
+}
+
+function cloneWordForCustomBank(word) {
+  const { banks, ...payload } = word;
+  return { ...payload };
+}
+
+function mergeSelectedBanks(scope = "word") {
+  const selected = [...selectedBankSet(scope)];
+  if (selected.length < 2) {
+    setBankManagerStatus(scope, "请选择至少 2 个词库再合并。", "feedback bad");
+    return;
+  }
+  const typedName = bankManagerElements(scope).nameInput?.value.trim();
+  const title = typedName || selected.map((bank) => wordBankLabels[bank] || bank).join(" + ");
+  const id = uniqueWordBankId(`${scope === "song" ? "song-" : ""}merged-${title}`);
+  const seen = new Set();
+  const mergedWords = selected.flatMap(bankWords).filter((word) => {
+    const key = String(word.word || "").toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).map(cloneWordForCustomBank);
+  if (mergedWords.length < minWordsPerBank) {
+    setBankManagerStatus(scope, `合并后只有 ${mergedWords.length} 个有效词条，少于 ${minWordsPerBank} 个。`, "feedback bad");
+    return;
+  }
+  const removedCustomIds = new Set(state.customWordBanks.filter((bank) => selected.includes(bank.id)).map((bank) => bank.id));
+  state.customWordBanks = state.customWordBanks.filter((bank) => !selected.includes(bank.id));
+  state.customWordBanks.push({
+    id,
+    title,
+    source: selected.map((bank) => wordBankLabels[bank] || bank).join(" + "),
+    importedAt: new Date().toISOString(),
+    words: mergedWords
+  });
+  selected.forEach((bank) => {
+    if (state.appSettings.wordBankTitleOverrides) delete state.appSettings.wordBankTitleOverrides[bank];
+    if (removedCustomIds.has(bank)) delete wordBankLabels[bank];
+    selectedWordBankIds.delete(bank);
+    selectedSongBankIds.delete(bank);
+  });
+  wordBankLabels[id] = title;
+  state.wordBank = id;
+  selectedBankSet(scope).add(id);
+  persistWordBankCatalog();
+  newWordQuestion();
+  setBankManagerStatus(scope, `已合并为“${title}”，共 ${mergedWords.length} 个词。`);
+}
+
+function editableWordBankId(bank) {
+  const customBank = state.customWordBanks.find((item) => item.id === bank);
+  if (customBank) return customBank.id;
+  const title = `${wordBankLabels[bank] || bank} · 自定义副本`;
+  const id = uniqueWordBankId(`${bank}-manual`);
+  state.customWordBanks.push({
+    id,
+    title,
+    source: wordBankLabels[bank] || bank,
+    importedAt: new Date().toISOString(),
+    words: bankWords(bank).map(cloneWordForCustomBank)
+  });
+  wordBankLabels[id] = title;
+  state.wordBank = id;
+  return id;
+}
+
+function upsertWordEntryFromForm() {
+  const targetBank = $("#wordEntryBankSelect").value;
+  const wordText = $("#wordEntryWordInput").value.trim();
+  const zh = $("#wordEntryZhInput").value.trim();
+  if (!targetBank || targetBank === "all") {
+    $("#wordSettingsStatus").textContent = "请选择一个具体词库。";
+    $("#wordSettingsStatus").className = "feedback bad";
+    return;
+  }
+  if (!wordText || !zh) {
+    $("#wordSettingsStatus").textContent = "英文和中文释义都要填写。";
+    $("#wordSettingsStatus").className = "feedback bad";
+    return;
+  }
+  const editableBank = editableWordBankId(targetBank);
+  const bank = state.customWordBanks.find((item) => item.id === editableBank);
+  const normalized = normalizeImportedWord({
+    word: wordText,
+    zh,
+    ipa: $("#wordEntryIpaInput").value.trim() || "待补充",
+    pos: $("#wordEntryPosInput").value.trim() || "word",
+    speakText: wordText,
+    spelling: wordText.toLowerCase().replace(/[^a-z]/g, ""),
+    example: "",
+    phonics: [],
+    syllables: [],
+    distractors: []
+  }, editableBank, bank.words.length, [zh]);
+  if (!normalized) return;
+  const existingIndex = bank.words.findIndex((item) => String(item.word || "").toLowerCase() === normalized.word.toLowerCase());
+  const { banks, ...wordPayload } = normalized;
+  if (existingIndex >= 0) bank.words[existingIndex] = wordPayload;
+  else bank.words.push(wordPayload);
+  persistWordBankCatalog();
+  $("#wordEntryBankSelect").value = editableBank;
+  $("#wordSettingsStatus").textContent = existingIndex >= 0 ? `已修改“${wordPayload.word}”。` : `已新增“${wordPayload.word}”。`;
+  $("#wordSettingsStatus").className = "feedback good";
+}
+
+function fillWordEntryEditor(wordText) {
+  const bank = currentWordBank() !== "all" ? currentWordBank() : ($("#wordEntryBankSelect").value || wordBankManagementKeys("word")[0]);
+  const word = bankWords(bank).find((item) => item.word === wordText) || allWords().find((item) => item.word === wordText);
+  if (!word) return;
+  $("#wordEntryBankSelect").value = bank;
+  $("#wordEntryWordInput").value = word.word || "";
+  $("#wordEntryZhInput").value = word.zh || "";
+  $("#wordEntryIpaInput").value = word.ipa || "";
+  $("#wordEntryPosInput").value = word.pos || "";
+  $("#wordSettingsStatus").textContent = `正在编辑“${word.word}”。`;
+  $("#wordSettingsStatus").className = "feedback";
 }
 
 function wordsForSelectedBank() {
@@ -36999,6 +37394,7 @@ function fillWordSettingsForm() {
   $("#dailyWordCount").value = String(normalizeDailyWordCount(state.dailyWordCount));
   fillAppSettingsForm();
   syncWordBankSelect();
+  renderWordBankManagers();
   renderWordLibrary();
   $("#wordSettingsStatus").textContent = "Word Camp 设置会跨终端共享。";
   $("#wordSettingsStatus").className = "feedback";
@@ -37022,6 +37418,7 @@ function openWordSettings() {
 
 function openModuleDialog(dialogId) {
   const dialog = $(`#${dialogId}`);
+  if (dialogId === "songSettingsDialog") renderBankManager("song");
   if (dialog) dialog.showModal();
 }
 
@@ -37047,8 +37444,19 @@ function openActiveViewSettings() {
   openModuleDialog(dialogByView[viewId] || "settingsDialog");
 }
 
+function applyIncomingRewardMigration(data) {
+  const hasRewardData = data.globalRewards || data.wordRewards || data.kanaRewards || data.phonicsRewards;
+  if (!hasRewardData) return;
+  state.globalRewards = normalizeGlobalRewards(
+    data.globalRewards || state.globalRewards,
+    legacyModuleBigStars(data.wordRewards, data.kanaRewards, data.phonicsRewards)
+  );
+  saveLocalItem("jojoGlobalRewards", JSON.stringify(state.globalRewards));
+}
+
 function applySharedState(data) {
   if (!data || typeof data !== "object") return;
+  applyIncomingRewardMigration(data);
   if (data.wordProgressPatch && typeof data.wordProgressPatch === "object") {
     state.wordProgress = { ...state.wordProgress, ...data.wordProgressPatch };
   }
@@ -37091,7 +37499,7 @@ function applySharedState(data) {
     }
   }
   if (data.wordRewards) {
-    state.wordRewards = { smallStars: 0, bigStars: 0, ...data.wordRewards };
+    state.wordRewards = normalizeWordRewards(data.wordRewards);
     saveLocalItem("jojoWordRewards", JSON.stringify(state.wordRewards));
   }
   if (typeof data.artMode === "boolean") {
@@ -37153,6 +37561,11 @@ function applySharedState(data) {
   if (data.cardCottage && typeof data.cardCottage === "object") {
     state.cardCottage = normalizeCardCottageState(data.cardCottage);
     saveLocalItem("jojoCardCottage", JSON.stringify(state.cardCottage));
+  }
+  if (data.globalRewards || data.wordRewards || data.kanaRewards || data.phonicsRewards) {
+    renderWordRewards();
+    renderKanaRewards();
+    renderPhonicsRewards();
   }
 }
 
@@ -37272,13 +37685,21 @@ function closeWordSettings() {
 }
 
 function currentViewId() {
-  return location.hash.replace("#", "") || "home";
+  const raw = location.hash.replace("#", "").split("?")[0].trim();
+  return /^[a-z][a-z0-9-]*$/i.test(raw) ? raw : "home";
 }
 
 function updateBrandAction() {
   const brand = $("#openSettings");
+  const viewId = currentViewId();
+  const activeView = document.getElementById(viewId)?.classList.contains("view") ? document.getElementById(viewId) : document.getElementById("home");
+  const title = activeView?.id === "home"
+    ? "JOJO LAB"
+    : (activeView?.querySelector("h2")?.textContent || "JOJO LAB").trim().toUpperCase();
+  $("#topbarTitle").textContent = title;
   brand.setAttribute("aria-label", "回到首页");
-  brand.classList.toggle("brand-home-action", currentViewId() !== "home");
+  brand.classList.toggle("brand-home-action", activeView?.id !== "home");
+  document.body.classList.toggle("subprogram-active", activeView?.id !== "home");
 }
 
 function updateActiveSettingsButton() {
@@ -37317,10 +37738,42 @@ function handleBrandClick() {
   location.hash = "home";
 }
 
+function restoreTopbarAction() {
+  if (!activeTopbarAction) return;
+  const { node, placeholder } = activeTopbarAction;
+  if (placeholder?.parentNode) placeholder.parentNode.insertBefore(node, placeholder);
+  placeholder?.remove();
+  node.classList.remove("is-in-topbar");
+  activeTopbarAction = null;
+}
+
+function moveActiveViewActionToTopbar(id) {
+  restoreTopbarAction();
+  const target = $("#topbarModuleActions");
+  if (!target || id === "home") {
+    if (target) target.hidden = true;
+    return;
+  }
+  const view = document.getElementById(id);
+  const actionNode = view?.querySelector(".section-head .section-actions, .section-head .cardhouse-counter");
+  if (!actionNode) {
+    target.hidden = true;
+    return;
+  }
+  const placeholder = document.createComment(`topbar-action:${id}`);
+  actionNode.parentNode.insertBefore(placeholder, actionNode);
+  actionNode.classList.add("is-in-topbar");
+  target.appendChild(actionNode);
+  target.hidden = false;
+  activeTopbarAction = { node: actionNode, placeholder };
+}
+
 function setView() {
   const requestedId = currentViewId();
-  const id = $(`#${requestedId}`) ? requestedId : "home";
+  const requestedView = document.getElementById(requestedId);
+  const id = requestedView?.classList.contains("view") ? requestedId : "home";
   $all(".view").forEach((view) => view.classList.toggle("active", view.id === id));
+  moveActiveViewActionToTopbar(id);
   updateBrandAction();
   updateActiveSettingsButton();
 }
@@ -37545,6 +37998,7 @@ function renderWordLibrary() {
             ${masteryButtonsHtml(word, level)}
           </div>
         </td>
+        <td><button class="ghost-btn word-edit-mini" type="button" data-word="${escapeHtml(word.word)}">编辑</button></td>
       </tr>
     `;
   }).join("");
@@ -37555,6 +38009,9 @@ function renderWordLibrary() {
     button.addEventListener("click", () => {
       setWordMastery(button.dataset.word, button.dataset.level);
     });
+  });
+  $all(".word-edit-mini").forEach((button) => {
+    button.addEventListener("click", () => fillWordEntryEditor(button.dataset.word));
   });
 }
 
@@ -37609,11 +38066,11 @@ function resetCurrentWordBank() {
 }
 
 function resetWordStars() {
-  if (!window.confirm("确认复位 Word Camp 星星吗？\n这个操作只清空小星和大星，不会影响词库学习进度。")) return;
+  if (!window.confirm("确认复位 Word Camp 小星吗？\n这个操作只清空 Word Camp 的小星进度，不会影响全局大星和词库学习进度。")) return;
   state.wordRewards = { smallStars: 0, bigStars: 0 };
   persistWordRewards();
   renderWordRewards();
-  showToast("Word Camp 星星已复位", "good");
+  showToast("Word Camp 小星已复位", "good");
 }
 
 function deleteCurrentWordBank() {
@@ -37910,8 +38367,8 @@ function loadPhonicsQuestState() {
 
 function normalizePhonicsRewards(value = {}) {
   return {
-    smallStars: Math.max(0, Number(value.smallStars || 0)),
-    bigStars: Math.max(0, Number(value.bigStars || 0)),
+    smallStars: rewardNumber(value.smallStars),
+    bigStars: 0,
     awardedUnits: Array.isArray(value.awardedUnits) ? value.awardedUnits.map(Number).filter(Number.isFinite) : []
   };
 }
@@ -38725,7 +39182,6 @@ function renderSongEmpty() {
   $("#songStatus").textContent = "";
   $("#songStatus").className = "feedback";
   clearSongCandidates({ clearSelectedSong: true });
-  $("#addSongWordBank").disabled = true;
   renderSongHistory();
   $("#songLines").innerHTML = `
     <article class="song-line-card">
@@ -38743,13 +39199,12 @@ function renderSongAnalysisProgress(payload, stage = "正在分析歌曲", optio
   const detail = options.detail || "正在整理歌曲介绍、逐句解释和 Word Camp 词库。";
   const steps = Array.isArray(options.steps) && options.steps.length
     ? options.steps
-    : ["歌曲信息", "逐句解释", "词库候选"];
+    : ["歌曲信息", "逐句解释", "自动同步词库"];
   const lyricLabel = lyricCount ? `${lyricCount} 句歌词 · ` : "";
   state.songAnalysis = null;
   state.activeSongHistoryId = "";
   $("#songStudyTitle").textContent = title;
   $("#songStudyMeta").textContent = `${artist ? artist + " · " : ""}${lyricLabel}${metaSuffix}`;
-  $("#addSongWordBank").disabled = true;
   clearSongCandidates({ clearSelectedSong: options.clearSelectedSong === true });
   $("#songStatus").textContent = stage;
   $("#songStatus").className = "feedback";
@@ -38774,7 +39229,6 @@ function renderSongCandidateResult(payload, candidates, notice = "") {
   const found = candidates.length;
   $("#songStudyTitle").textContent = title;
   $("#songStudyMeta").textContent = `${artist ? artist + " · " : ""}${found ? `找到 ${found} 个候选` : "候选搜索未命中"}`;
-  $("#addSongWordBank").disabled = true;
   $("#songLines").innerHTML = `
     <article class="song-line-card">
       <strong class="lyric-line">${found ? "选择候选歌曲" : "还没有明确候选"}</strong>
@@ -39008,8 +39462,7 @@ function renderSongAnalysis(data) {
   const isFallbackDraft = Boolean(data.isFallbackDraft);
   state.songAnalysis = data;
   $("#songStudyTitle").textContent = title;
-  $("#songStudyMeta").textContent = `${artist ? artist + " · " : ""}${lines.length} 句 · ${isFallbackDraft ? "临时学习卡" : `${vocabulary.length} 个词库候选`}`;
-  $("#addSongWordBank").disabled = isFallbackDraft || vocabulary.length < minWordsPerBank;
+  $("#songStudyMeta").textContent = `${artist ? artist + " · " : ""}${lines.length} 句 · ${isFallbackDraft ? "临时学习卡" : `${vocabulary.length} 个词库词条`}`;
 
   if (!lines.length) {
     renderSongEmpty();
@@ -39064,8 +39517,8 @@ function renderSongAnalysis(data) {
 
   const vocabularyHtml = vocabulary.length ? `
     <article class="song-line-card song-vocab-card">
-      <strong>Word Camp 词库候选</strong>
-      <p class="translation-line">${vocabulary.length} 个不重复词条；点击“加入 Word Camp 词库”后会成为独立词库。</p>
+      <strong>Word Camp 词库词条</strong>
+      <p class="translation-line">${vocabulary.length} 个不重复词条；分析完成后会自动同步到 Word Camp。</p>
       <div class="word-chip-grid">
         ${vocabulary.map((item) => `
           <button class="word-chip" type="button" data-word="${escapeHtml(item.word || item.lemma || "")}">
@@ -39161,7 +39614,7 @@ async function requestSongCandidates() {
 function songVocabularyToWordBank() {
   const analysis = state.songAnalysis;
   const vocabulary = Array.isArray(analysis?.vocabulary) ? analysis.vocabulary : [];
-  if (!vocabulary.length) throw new Error("还没有可加入词库的词条。请先分析歌曲。");
+  if (!vocabulary.length) throw new Error("还没有可同步到词库的词条。请先分析歌曲。");
   const title = analysis.title || $("#songTitle").value.trim() || "Song Notes";
   const artist = analysis.artist || $("#songArtist").value.trim();
   const bankId = slugifyWordBankId(`song-${artist || "unknown"}-${title}`);
@@ -39197,26 +39650,24 @@ function songVocabularyToWordBank() {
   };
 }
 
-function addSongAnalysisToWordCamp() {
-  try {
-    const bank = songVocabularyToWordBank();
-    state.customWordBanks = state.customWordBanks.filter((item) => item.id !== bank.id);
+function upsertSongAnalysisWordBank() {
+  const bank = songVocabularyToWordBank();
+  const existingIndex = state.customWordBanks.findIndex((item) => item.id === bank.id);
+  if (existingIndex >= 0) {
+    state.customWordBanks[existingIndex] = bank;
+  } else {
     state.customWordBanks.push(bank);
-    wordBankLabels[bank.id] = bank.title;
-    state.deletedWordBanks = state.deletedWordBanks.filter((id) => id !== bank.id);
-    state.wordBank = bank.id;
-    saveLocalItem("jojoDeletedWordBanks", JSON.stringify(state.deletedWordBanks));
-    saveLocalItem("jojoWordBank", state.wordBank);
-    saveCustomWordBanks();
-    syncWordBankSelect();
-    renderWordStudyState({ library: true, syncSelect: true });
-    newWordQuestion();
-    $("#songStatus").textContent = `已加入 Word Camp：“${bank.title}”，共 ${bank.words.length} 个词条。`;
-    $("#songStatus").className = "feedback good";
-  } catch (error) {
-    $("#songStatus").textContent = error.message;
-    $("#songStatus").className = "feedback bad";
   }
+  wordBankLabels[bank.id] = bank.title;
+  state.deletedWordBanks = state.deletedWordBanks.filter((id) => id !== bank.id);
+  state.wordBank = bank.id;
+  saveLocalItem("jojoDeletedWordBanks", JSON.stringify(state.deletedWordBanks));
+  saveLocalItem("jojoWordBank", state.wordBank);
+  saveCustomWordBanks();
+  syncWordBankSelect();
+  renderWordStudyState({ library: true, syncSelect: true });
+  newWordQuestion();
+  return { bank, updated: existingIndex >= 0 };
 }
 
 async function requestSongAnalysis() {
@@ -39239,6 +39690,16 @@ async function requestSongAnalysis() {
     $("#songStatus").className = "feedback good";
     renderSongAnalysis(data);
     persistSongAnalysis(data, payload);
+    try {
+      const { bank, updated } = upsertSongAnalysisWordBank();
+      $("#songStatus").textContent = updated
+        ? `大模型分析完成，已更新 Word Camp：“${bank.title}”，共 ${bank.words.length} 个词条。`
+        : `大模型分析完成，已自动加入 Word Camp：“${bank.title}”，共 ${bank.words.length} 个词条。`;
+      $("#songStatus").className = "feedback good";
+    } catch (error) {
+      $("#songStatus").textContent = `大模型分析完成，但自动加入词库失败：${error.message}`;
+      $("#songStatus").className = "feedback bad";
+    }
   } catch (error) {
     if (!isCurrentSongWorkflow(workflowVersion)) return;
     if (/没有返回 JSON|JSON 格式|JSON 对象|not valid JSON|Unexpected end/i.test(error.message)) {
@@ -39547,9 +40008,9 @@ function updateCardCottageSummary() {
   const totalCards = currentCardCottageTotal();
   const revealedCount = Math.max(0, Math.min(totalCards, state.cardCottage.revealed.length));
   const remainingCount = Math.max(0, totalCards - revealedCount);
-  const bigStars = Math.max(0, Number(state.wordRewards?.bigStars || 0));
+  const bigStars = globalBigStars();
   if ($("#cardhouseBigStarCount")) $("#cardhouseBigStarCount").textContent = String(bigStars);
-  if ($(".cardhouse-star-bank")) $(".cardhouse-star-bank").setAttribute("aria-label", `当前大金星 ${bigStars} 颗`);
+  if ($(".cardhouse-star-bank")) $(".cardhouse-star-bank").setAttribute("aria-label", `当前全局大金星 ${bigStars} 颗`);
   if ($("#cardhouseProgressCount")) $("#cardhouseProgressCount").textContent = `${revealedCount}/${totalCards}`;
   if ($(".cardhouse-progress-pill")) $(".cardhouse-progress-pill").setAttribute("aria-label", `已翻开 ${revealedCount} / ${totalCards}`);
   if ($("#cardhouseBoard")) $("#cardhouseBoard").setAttribute("aria-label", `${totalCards} 张奖励卡`);
@@ -39605,19 +40066,16 @@ function closeCardPreview() {
 }
 
 function spendCardCottageBigStar() {
-  state.wordRewards = {
-    smallStars: Math.max(0, Number(state.wordRewards?.smallStars || 0)),
-    bigStars: Math.max(0, Number(state.wordRewards?.bigStars || 0))
-  };
-  if (state.wordRewards.bigStars < 1) {
+  state.globalRewards = normalizeGlobalRewards(state.globalRewards, 0);
+  if (state.globalRewards.bigStars < 1) {
     playCue("bad");
-    showToast("需要 1 颗大金星才能翻开奖励卡。先去 Word Camp 攒大金星！", "bad");
+    showToast("需要 1 颗全局大金星才能翻开奖励卡。先去任意练习里攒大星！", "bad");
     updateCardCottageSummary();
     return false;
   }
-  state.wordRewards.bigStars -= 1;
-  persistWordRewards();
-  renderWordRewards();
+  state.globalRewards.bigStars -= 1;
+  persistGlobalRewards();
+  renderGlobalRewards();
   updateCardCottageSummary();
   return true;
 }
@@ -39918,6 +40376,13 @@ function bindEvents() {
   $("#resetWordBank").addEventListener("click", resetCurrentWordBank);
   $("#resetWordStars").addEventListener("click", resetWordStars);
   $("#deleteWordBank").addEventListener("click", deleteCurrentWordBank);
+  $("#renameSelectedBank").addEventListener("click", () => renameSelectedBanks("word"));
+  $("#mergeSelectedBanks").addEventListener("click", () => mergeSelectedBanks("word"));
+  $("#deleteSelectedBanks").addEventListener("click", () => deleteSelectedBanks("word"));
+  $("#renameSelectedSongBank").addEventListener("click", () => renameSelectedBanks("song"));
+  $("#mergeSelectedSongBanks").addEventListener("click", () => mergeSelectedBanks("song"));
+  $("#deleteSelectedSongBanks").addEventListener("click", () => deleteSelectedBanks("song"));
+  $("#upsertWordEntry").addEventListener("click", upsertWordEntryFromForm);
   $("#openImportGuide").addEventListener("click", openImportGuide);
   $("#closeImportGuide").addEventListener("click", closeImportGuide);
   $("#importGuideDialog").addEventListener("click", (event) => {
@@ -40016,7 +40481,6 @@ function bindEvents() {
   $("#phonicsChallengeButton").addEventListener("click", completePhonicsChallenge);
   $("#findSongCandidates").addEventListener("click", requestSongCandidates);
   $("#analyzeSong").addEventListener("click", requestSongAnalysis);
-  $("#addSongWordBank").addEventListener("click", addSongAnalysisToWordCamp);
   $("#speakSongAll").addEventListener("click", speakSongAll);
   $("#artForm").addEventListener("submit", addArtwork);
   installArtUploadInteractions();
@@ -40302,6 +40766,7 @@ async function startApp() {
   renderKanaRewards();
   renderWordRewards();
   renderPhonicsRewards();
+  renderGlobalRewards();
   $("#artDate").valueAsDate = new Date();
   installCustomWordBankLabels();
   syncWordBankSelect();

@@ -46,6 +46,9 @@ Primary use cases:
 - The unified settings gear must match the neighboring top-bar visual-mode button in size, border, radius, background, and shadow.
 - When the home view already has the unified gear, do not add an extra "主页设置" button inside the poster or content area.
 - The main top-bar brand should read horizontally as "JOJO LAB · PLAY HARD, THINK SHARP." after the logo. If using a handwritten slogan asset, keep it transparent and recolor it to the current slogan color rather than embedding a mismatched background.
+- On child app views, keep the unified top bar logo, replace the "JOJO LAB" wordmark with the active app name in the same uppercase wordmark style, and keep the "PLAY HARD, THINK SHARP." slogan visible in the top bar.
+- Child app section eyebrows and explanatory subtitles such as "English Songs" and "Jojo 喜欢的英文歌大模型精读" should not be shown inside the app surface; the unified top bar owns the app title.
+- Child app title-bar actions, such as Song Notes "逐句朗读", should move into the unified top bar and match the neighboring visual-mode/settings buttons in border, radius, background, size, and shadow.
 - Program surfaces should use solid paper-like backgrounds, not gradient backgrounds.
 - Left-side control panels should show their core workflow without feeling clipped. If everything cannot fit, prefer a comfortable internal scroll over tiny text.
 - On phone/narrow layouts for Word Camp, put the word card and answer options above the control/progress panel. The practice surface comes first; controls move below.
@@ -67,7 +70,7 @@ Primary use cases:
 - Login digit entry should provide a short, gentle sound cue. Backspace, wrong PIN, and successful unlock should use distinct audio feedback.
 - After a correct PIN, the login surface should dissolve with a brief magic-like transition instead of disappearing instantly; the blurred main app should unfrost during that transition.
 - The real app PIN is 1106 unless explicitly overridden by a local environment variable. Do not hard-code additional visible hints into the UI.
-- Demo mode PIN is 8888. Demo mode starts with 6 Word Camp big gold stars, can exercise normal app flows, and must not persist changes to local shared state, OSS, Git, or server-local upload directories.
+- Demo mode PIN is 8888. Demo mode starts with 6 global big gold stars, can exercise normal app flows, and must not persist changes to local shared state, OSS, Git, or server-local upload directories.
 - Demo mode may use in-memory session state and browser memory, but it must not contaminate the user's real localStorage data.
 - Login attempts need server-side anti-spam protection. Repeated wrong PINs should return a visible cooldown and temporarily disable input; do not rely only on frontend throttling.
 
@@ -92,19 +95,22 @@ Primary use cases:
 - In Song Notes lyric cards, the Chinese translation should be larger than regular explanation text and use a distinct readable color so children can quickly find it.
 - Song Notes word chips inside lyric cards should use child-readable text sizes; do not make per-line vocabulary chips compact.
 - Song Notes' song title/summary area should scroll together with the lyric cards in the study surface. Do not freeze the song title above a separately scrolling lyric list.
-- Song actions should be short but clear: search candidate, analyze song, add to Word Camp.
+- Song Notes should not show a manual "add to Word Camp" button. Successful song analysis should automatically upsert a stable Song Notes word bank, updating an existing bank instead of creating duplicates.
+- Song Notes settings should let users manage Song Notes-generated word banks, including multi-select delete, rename, and merge. These changes must update the same Word Camp word bank state.
+- Song actions should be short but clear: search candidate and analyze song; Word Camp sync is automatic.
 
 ## Kana Quest Specifics
 
 - Kana Quest should use a Word Camp-style mastery progress panel.
 - The progress panel covers all kana because the total set is fixed; do not add range or daily quantity controls to Kana Quest.
 - Track hiragana and katakana separately while keeping the UI simple for parent-child practice.
-- Kana Quest has its own reward bucket, separate from Word Camp/Card Cottage rewards. Award 1 small star only after 2 newly mastered kana; exchange 12 small stars for 1 big star. This makes kana rewards slower than Word Camp because kana questions are shorter.
+- Kana Quest owns its small-star progress, separate from other modules. Award 1 Kana small star only after 2 newly mastered kana; exchange 12 Kana small stars into 1 global big star. This makes kana rewards slower than Word Camp because kana questions are shorter.
+- Kana Quest's prompt hint, such as "选择正确罗马音", should be large and placed beside the main kana/romaji prompt on tablet layouts, not as tiny helper text underneath. Kana answer buttons should use larger child-readable type than generic option buttons.
 
 ## Phonics Quest Specifics
 
-- Phonics Quest has two reward concepts: challenge points for unlocking unit challenges, and its own small/big star reward bucket. Keep the labels visually distinct.
-- Completing a 30-point unit challenge for the first time awards 2 small stars; exchange 6 small stars for 1 big star. Replaying already completed units should not duplicate reward stars.
+- Phonics Quest has two reward concepts: challenge points for unlocking unit challenges, and its own small-star progress. Keep the labels visually distinct.
+- Completing a 30-point unit challenge for the first time awards 2 Phonics small stars; exchange 6 Phonics small stars for 1 global big star. Replaying already completed units should not duplicate reward stars.
 - Phonics rewards should feel comparable to Word Camp effort: harder than a few tap-through drills, but not so slow that a child cannot earn visible progress in a short session.
 
 ## Word Camp Specifics
@@ -116,7 +122,8 @@ Primary use cases:
 - In "看中文拼单词" mode, missing letters should avoid adjacent gaps whenever the word length allows it.
 - In "看中文拼单词" mode, keep the word card size/proportion consistent with the other Word Camp modes; only the Chinese meaning text should use a smaller wrapping prompt style so long meanings never spill out of the card.
 - Word Camp settings should edit mastery levels with compact level buttons, not a select menu; keep these rows low and comfortable for scanning.
-- Word Camp owns daily word count, VO follow-up, word bank import, word bank switching, word mastery edits, and star reset settings.
+- Word Camp settings should manage all word banks with multi-select delete, rename, and merge. It should also support adding new words and editing word meanings in editable/custom word banks, with results reflected immediately in practice and shared state.
+- Word Camp owns daily word count, VO follow-up, word bank import, word bank switching, word bank management, word mastery edits, and Word Camp small-star reset settings. Word Camp small stars exchange into global big stars; resetting Word Camp small stars must not reset global big stars.
 
 ## Card Cottage Specifics
 
@@ -126,14 +133,14 @@ Primary use cases:
 - If card-back source art contains unwanted text, remove or repair the text in the asset itself; do not hide it by top-cropping the image.
 - Card Cottage should show 4-6 cards per row depending on viewport width; avoid dense 8-card rows.
 - The Card Cottage card grid should be vertically scrollable inside the card interface, rather than stretching the whole page, and it must not allow horizontal scrolling.
-- Card Cottage's title area should stay compact: show the real Word Camp big gold star as an icon with its count, plus a single revealed/total counter such as "0/50". Do not show label chips like "大金星", "已翻开", or "待翻开" in the top area.
+- Card Cottage's title area should stay compact: show the real global big gold star as an icon with its count, plus a single revealed/total counter such as "0/50". Do not show label chips like "大金星", "已翻开", or "待翻开" in the top area.
 - Card Cottage settings must expose 50 front-image slots. Users should be able to upload, replace, delete, and drag-drop images into those slots with large, orderly controls.
 - Card Cottage settings must also let the user set the deck's total card count. Keep this deck total separate from the 50 front-image slots; if the deck has more cards than filled image slots, repeat available images randomly.
 - Card Cottage's built-in/default Jojo photos should appear in those front-image slots by default, so users can see, delete, or replace them from the same interface.
 - Card Cottage uploaded slot images should persist through the local shared state/service so all terminals see the same deck assets.
 - If fewer Card Cottage slot images are filled than the configured deck total, the visible deck should randomly repeat the available uploaded images. If none are uploaded, use the built-in Jojo reward photos as a fallback.
 - Card fronts can use Jojo photos with a transparent gold frame overlay; preserve only the gold frame art, not any black background from the frame source.
-- Flipping a hidden Card Cottage card costs 1 Word Camp big gold star. If no big gold star is available, block the reveal and explain that the child needs to earn a big star in Word Camp first.
+- Flipping a hidden Card Cottage card costs 1 global big gold star. If no big gold star is available, block the reveal and explain that the child needs to earn a big star from any practice module first.
 - When a hidden card is tapped, it should fly out, rotate/scale up, reveal the front, return to its original slot, and then stay face-up.
 - Revealed cards can open a large photo preview, but the full image must remain visible in both portrait and landscape viewports; use contain sizing, never crop it off-screen.
 - A deck of unrevealed cards should feel collectible and child-facing; avoid flat admin grids.
