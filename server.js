@@ -206,12 +206,12 @@ function publicState(state, options = {}) {
     aiSettings: { ...aiSettings, hasApiKey },
     ossSettings: publicOssSettingsForState(state)
   };
-  applySignedOssUrlsToPublicState(result);
   if (options.lite) {
     delete result.gallery;
     delete result.songHistory;
     delete result.wordProgress;
   }
+  applySignedOssUrlsToPublicState(result);
   return result;
 }
 

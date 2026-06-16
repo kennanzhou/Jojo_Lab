@@ -128,6 +128,8 @@ Primary use cases:
 - In "看中文拼单词" mode, keep the word card size/proportion consistent with the other Word Camp modes; only the Chinese meaning text should use a smaller wrapping prompt style so long meanings never spill out of the card.
 - Word Camp settings should edit mastery levels with compact level buttons, not a select menu; keep these rows low and comfortable for scanning.
 - Word Camp settings should manage all word banks with multi-select delete, rename, and merge. It should also support adding new words and editing word meanings in editable/custom word banks, with results reflected immediately in practice and shared state.
+- Saving Word Camp settings must persist the currently selected word bank from the live form control and reset the daily plan when the bank changes; do not rely only on a separate select change event.
+- Word Camp answer buttons and spelling keyboard controls must use touch-safe handlers and debounce correct-answer advancement so iPad touch/click synthesis or old timers cannot skip to another word before the child answers.
 - Word Camp owns daily word count, VO follow-up, word bank import, word bank switching, word bank management, word mastery edits, and Word Camp small-star reset settings. Word Camp small stars exchange into global big stars; resetting Word Camp small stars must not reset global big stars.
 
 ## Card Cottage Specifics
@@ -170,6 +172,7 @@ Primary use cases:
 - Homepage background presets should also be mirrored to OSS after OSS is configured. Built-in assets can remain as offline fallbacks, but the public deployment path should prefer OSS URLs for both preset and custom backgrounds.
 - OSS credentials belong only in `work/private/` shared state or environment variables. Never hard-code OSS keys, never echo them in responses, and never commit them.
 - Keep first-load shared state lightweight for public/tunnel access. Do not make Song Notes, home navigation, or other non-gallery views wait on large base64 gallery payloads; load large media state lazily or store media on OSS.
+- Do not render media-heavy hidden subprograms such as Art Gallery or Card Cottage during home startup; hydrate them when the user opens that app so public deployments do not eagerly request OSS image grids.
 - After frontend layout changes, verify with the browser at desktop/default and iPad-like sizes.
 - If a layout regression happens because of a global rule, add a scoped override for the affected module instead of weakening the whole app.
 - Preserve user data and private files. Never print API keys or other secrets in responses.

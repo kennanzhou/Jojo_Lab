@@ -35469,6 +35469,12 @@ let wordCacheVersion = 0;
 let cachedCustomWords = null;
 let cachedAllWords = null;
 let selectedBankCache = { key: "", words: [] };
+let wordNextQuestionTimer = null;
+let wordAnswerLocked = false;
+let wordQuestionToken = 0;
+let galleryHydrated = false;
+let cardCottageHydrated = false;
+let songHistoryHydrated = false;
 
 function $(selector) {
   return document.querySelector(selector);
@@ -37325,15 +37331,20 @@ function fillAiSettingsForm() {
 }
 
 async function saveWordSettingsFromForm() {
+  const selectedWordBank = $("#settingsWordBank")?.value || state.wordBank;
+  const previousWordBank = state.wordBank;
   const previousDailyWordCount = normalizeDailyWordCount(state.dailyWordCount);
+  state.wordBank = selectedWordBank;
+  saveLocalItem("jojoWordBank", state.wordBank);
   state.dailyWordCount = normalizeDailyWordCount($("#dailyWordCount").value);
   saveLocalItem("jojoDailyWordCount", String(state.dailyWordCount));
-  if (state.dailyWordCount !== previousDailyWordCount) {
+  if (state.dailyWordCount !== previousDailyWordCount || state.wordBank !== previousWordBank) {
     state.dailyWordPlan = null;
     removeLocalItem("jojoDailyWordPlan");
   }
   saveAppSettings();
   if (serverPersistenceAvailable) await postSharedStatePatch({
+    wordBank: state.wordBank,
     dailyWordCount: state.dailyWordCount,
     dailyWordPlan: state.dailyWordPlan,
     appSettings: state.appSettings
@@ -37721,6 +37732,35 @@ function moveActiveViewActionToTopbar(id) {
   activeTopbarAction = { node: actionNode, placeholder };
 }
 
+function hydrateMediaForView(id) {
+  if (id === "songs" && !songHistoryHydrated) {
+    songHistoryHydrated = true;
+    if (state.songHistory.some((item) => item?.analysis)) {
+      restoreSongHistory(0);
+    } else {
+      renderSongEmpty();
+    }
+    void loadSharedSongHistory({ restoreLatest: true });
+  }
+  if (id === "gallery") {
+    if (!galleryHydrated) {
+      galleryHydrated = true;
+      renderGallery({ persist: false });
+      void loadSharedGallery();
+    } else {
+      renderGallery({ persist: false });
+    }
+  }
+  if (id === "cardhouse") {
+    if (!cardCottageHydrated) {
+      cardCottageHydrated = true;
+      renderCardCottage();
+    } else {
+      updateCardCottageSummary();
+    }
+  }
+}
+
 function setView() {
   const requestedId = currentViewId();
   const requestedView = document.getElementById(requestedId);
@@ -37738,6 +37778,7 @@ function setView() {
   requestAnimationFrame(resetScroll);
   setTimeout(resetScroll, 0);
   setTimeout(resetScroll, 80);
+  hydrateMediaForView(id);
 }
 
 function clearHomeTileSelection() {
@@ -37855,11 +37896,27 @@ function renderOptions(selector, options, correct, handler) {
   if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
   container.innerHTML = options.map((option) => `<button type="button" data-answer="${escapeHtml(option)}">${escapeHtml(option)}</button>`).join("");
   $all(`${selector} button`).forEach((button) => {
-    button.addEventListener("click", () => {
+    bindTouchPress(button, () => {
       button.blur();
       handler(button.dataset.answer === correct, correct);
     });
   });
+}
+
+function clearWordNextQuestionTimer() {
+  if (!wordNextQuestionTimer) return;
+  window.clearTimeout(wordNextQuestionTimer);
+  wordNextQuestionTimer = null;
+}
+
+function scheduleWordNextQuestion(delay = 850) {
+  clearWordNextQuestionTimer();
+  const token = wordQuestionToken;
+  wordNextQuestionTimer = window.setTimeout(() => {
+    wordNextQuestionTimer = null;
+    if (token !== wordQuestionToken) return;
+    newWordQuestion();
+  }, delay);
 }
 
 function filteredWords() {
@@ -38151,11 +38208,12 @@ function renderSpellingKeyboard() {
     </div>
   `;
   $all("#spellingKeyboard button").forEach((button) => {
-    button.addEventListener("click", () => handleSpellingKey(button.dataset.letter, button.dataset.action));
+    bindTouchPress(button, () => handleSpellingKey(button.dataset.letter, button.dataset.action));
   });
 }
 
 function handleSpellingKey(letter, action) {
+  if (wordAnswerLocked) return;
   if (action === "backspace") state.spelling.answer.pop();
   if (action === "clear") state.spelling.answer = [];
   if (letter && state.spelling.answer.length < state.spelling.missing.length) state.spelling.answer.push(letter);
@@ -38174,6 +38232,9 @@ function meaningChoicesFor(word) {
 }
 
 function newWordQuestion() {
+  clearWordNextQuestionTimer();
+  wordAnswerLocked = false;
+  wordQuestionToken += 1;
   ensureDailyWordPlan();
   const pool = filteredWords();
   if (!pool.length) {
@@ -38253,7 +38314,7 @@ function finishCorrectWordAnswer(progressKey, record, wasMastered, options = {})
   $("#wordFeedback").textContent = "正确。下一题来了。";
   $("#wordFeedback").className = "feedback good";
   if (options.speak !== false) speak(state.word.speakText || state.word.word);
-  window.setTimeout(newWordQuestion, 850);
+  scheduleWordNextQuestion();
 }
 
 async function runWordRepeatGate(progressKey, record, wasMastered) {
@@ -38289,11 +38350,13 @@ async function runWordRepeatGate(progressKey, record, wasMastered) {
 }
 
 function handleWordAnswer(isCorrect, correct) {
+  if (wordAnswerLocked) return;
   const feedback = $("#wordFeedback");
   const progressKey = currentWordRecordKey(state.word);
   const record = wordRecord(state.word);
   const wasMastered = record.wrongStreak < 3 && Number(record.score || 0) >= 3;
   if (isCorrect) {
+    wordAnswerLocked = true;
     if (shouldUseWordRepeatGate()) {
       runWordRepeatGate(progressKey, record, wasMastered);
     } else {
@@ -40733,9 +40796,8 @@ async function startApp() {
   syncWordBankSelect();
   fillAiSettingsForm();
   fillOssSettingsForm();
-  refreshDeploymentStatus();
   state.cardCottage = normalizeCardCottageState(state.cardCottage);
-  saveCardCottageState();
+  saveLocalItem("jojoCardCottage", JSON.stringify(state.cardCottage));
   applyArtMode();
   applyHomeBackground();
   renderHomeBackgroundSettings();
@@ -40745,16 +40807,7 @@ async function startApp() {
   newKanaQuestion();
   newWordQuestion();
   renderPhonics();
-  if (state.songHistory.some((item) => item?.analysis)) {
-    restoreSongHistory(0);
-  } else {
-    renderSongEmpty();
-  }
   loadSharedWordProgress();
-  loadSharedSongHistory({ restoreLatest: true });
-  renderGallery({ persist: false });
-  loadSharedGallery();
-  renderCardCottage();
 }
 
 async function init() {
