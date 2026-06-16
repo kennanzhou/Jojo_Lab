@@ -38853,6 +38853,153 @@ function renderLyricsReviewBlock(review) {
   `;
 }
 
+function normalizeSongTerm(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[’`]/g, "'")
+    .replace(/[^a-z0-9'\s-]+/g, " ")
+    .replace(/[-_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function songVocabularyAliases(item) {
+  const aliases = [
+    item?.text,
+    item?.word,
+    item?.lemma,
+    ...(Array.isArray(item?.surfaceForms) ? item.surfaceForms : [])
+  ];
+  return [...new Set(aliases.map(normalizeSongTerm).filter(Boolean))];
+}
+
+function songLineHasAlias(lineText, alias) {
+  const line = ` ${normalizeSongTerm(lineText)} `;
+  const term = ` ${normalizeSongTerm(alias)} `;
+  return term.trim() && line.includes(term);
+}
+
+function songLineAliasIndex(lineText, aliases) {
+  const line = ` ${normalizeSongTerm(lineText)} `;
+  const indexes = aliases
+    .map((alias) => line.indexOf(` ${alias} `))
+    .filter((index) => index >= 0);
+  return indexes.length ? Math.min(...indexes) : Number.MAX_SAFE_INTEGER;
+}
+
+function songSourceLineMatches(item, lineNumber) {
+  const sourceLines = Array.isArray(item?.sourceLines) ? item.sourceLines : [];
+  return sourceLines.some((value) => Number(value) === lineNumber);
+}
+
+let cachedSongWordLookupVersion = -1;
+let cachedSongWordLookup = null;
+
+function songWordLookup() {
+  if (cachedSongWordLookup && cachedSongWordLookupVersion === wordCacheVersion) return cachedSongWordLookup;
+  const lookup = new Map();
+  allWords().forEach((word) => {
+    [word.word, word.spelling, word.speakText].forEach((value) => {
+      const key = normalizeSongTerm(value);
+      if (key && !lookup.has(key)) lookup.set(key, word);
+    });
+  });
+  cachedSongWordLookupVersion = wordCacheVersion;
+  cachedSongWordLookup = lookup;
+  return lookup;
+}
+
+function songFallbackTermForms(term) {
+  const normalized = normalizeSongTerm(term);
+  const forms = new Set([normalized]);
+  const addTrimmedSuffix = (suffix, replacements = [""]) => {
+    if (!normalized.endsWith(suffix) || normalized.length <= suffix.length + 2) return;
+    const stem = normalized.slice(0, -suffix.length);
+    replacements.forEach((replacement) => forms.add(stem + replacement));
+    if (stem.length > 2 && stem[stem.length - 1] === stem[stem.length - 2]) forms.add(stem.slice(0, -1));
+  };
+  if (normalized.endsWith("'s")) forms.add(normalized.slice(0, -2));
+  if (normalized.endsWith("ies") && normalized.length > 4) forms.add(`${normalized.slice(0, -3)}y`);
+  addTrimmedSuffix("es");
+  addTrimmedSuffix("s");
+  addTrimmedSuffix("ing", ["", "e"]);
+  addTrimmedSuffix("ed", ["", "e"]);
+  addTrimmedSuffix("est", ["", "e"]);
+  addTrimmedSuffix("er", ["", "e"]);
+  return [...forms].filter(Boolean);
+}
+
+function isSongLineCardStopword(term) {
+  const normalized = normalizeSongTerm(term);
+  const root = normalized.split("'")[0];
+  return !normalized || normalized.length <= 2 || songFallbackStopwords.has(normalized) || songFallbackStopwords.has(root);
+}
+
+function songFallbackWordsFromLine(lineText) {
+  const lookup = songWordLookup();
+  const tokens = String(lineText || "").match(/[A-Za-z][A-Za-z'’-]*/g) || [];
+  const seen = new Set();
+  return tokens.flatMap((raw) => {
+    const normalized = normalizeSongTerm(raw);
+    if (seen.has(normalized) || isSongLineCardStopword(normalized)) return [];
+    seen.add(normalized);
+    const source = songFallbackTermForms(normalized).map((term) => lookup.get(term)).find(Boolean);
+    if (!source) return [];
+    return [{
+      text: raw.replace(/[’`]/g, "'"),
+      lemma: source.word,
+      meaning: source.zh,
+      pos: source.pos || "",
+      isSlang: false,
+      explanation: source.example || "",
+      pronunciationTip: source.ipa || ""
+    }];
+  });
+}
+
+function songVocabularyChipFromItem(item, lineText) {
+  const aliases = songVocabularyAliases(item);
+  const matchingAlias = aliases.find((alias) => songLineHasAlias(lineText, alias));
+  const displayText = matchingAlias || item?.word || item?.lemma || item?.text || "";
+  return {
+    text: displayText,
+    lemma: item?.lemma || item?.word || item?.text || displayText,
+    meaning: item?.meaning || item?.zh || item?.meaningInSong || "",
+    pos: item?.pos || "",
+    isSlang: Boolean(item?.isSlang),
+    explanation: item?.explanation || item?.meaningInSong || item?.example || "",
+    pronunciationTip: item?.pronunciationTip || item?.ipa || "",
+    slangNote: item?.slangNote || "",
+    order: songLineAliasIndex(lineText, matchingAlias ? [matchingAlias] : aliases)
+  };
+}
+
+function addSongWordChip(target, item, lineText, seenAliases) {
+  const aliases = songVocabularyAliases(item);
+  if (!aliases.length || aliases.some((alias) => seenAliases.has(alias))) return;
+  aliases.forEach((alias) => seenAliases.add(alias));
+  target.push(songVocabularyChipFromItem(item, lineText));
+}
+
+function songWordsForLine(line, index, vocabulary) {
+  const lineText = line?.en || "";
+  const lineNumber = index + 1;
+  const words = [];
+  const seenAliases = new Set();
+  (Array.isArray(line?.words) ? line.words : []).forEach((item) => {
+    addSongWordChip(words, item, lineText, seenAliases);
+  });
+  (Array.isArray(vocabulary) ? vocabulary : []).forEach((item) => {
+    const aliases = songVocabularyAliases(item);
+    const belongsToLine = songSourceLineMatches(item, lineNumber) || aliases.some((alias) => songLineHasAlias(lineText, alias));
+    if (belongsToLine) addSongWordChip(words, item, lineText, seenAliases);
+  });
+  songFallbackWordsFromLine(lineText).forEach((item) => {
+    addSongWordChip(words, item, lineText, seenAliases);
+  });
+  return words.sort((a, b) => a.order - b.order);
+}
+
 function renderSongAnalysis(data) {
   const title = data.title || $("#songTitle").value.trim() || "英文歌精读";
   const artist = data.artist || $("#songArtist").value.trim();
@@ -38889,14 +39036,14 @@ function renderSongAnalysis(data) {
   ].join("");
 
   const lineHtml = lines.map((line, index) => {
-    const wordsInLine = Array.isArray(line.words) ? line.words : [];
+    const wordsInLine = songWordsForLine(line, index, vocabulary);
     return `
       <article class="song-line-card">
         <div class="song-line-head">
           <div>
             <span class="prompt-label">Line ${index + 1}</span>
             <strong class="lyric-line">${escapeHtml(line.en || "")}</strong>
-            <p class="translation-line">${escapeHtml(line.zh || "")}</p>
+            <p class="translation-line song-translation">${escapeHtml(line.zh || "")}</p>
             <p class="translation-line">${escapeHtml(line.explanation || "")}</p>
           </div>
           <button class="ghost-btn speak-line" type="button" data-line="${escapeHtml(line.en || "")}">朗读</button>

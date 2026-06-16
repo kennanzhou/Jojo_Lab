@@ -88,6 +88,10 @@ Primary use cases:
 - Song Notes vocabulary extraction must include every unique meaningful English word that appears in the user-provided lyrics, including simple image/action words, repeated chorus words, and inflected surface forms. Do not skip words like sun/day/run just because they are easy.
 - Ultra-basic function words should not become standalone vocabulary entries, including articles, common conjunctions, be-verbs, basic pronouns, common prepositions, auxiliaries, and filler interjections such as a/an/the/and/is/to/of/in/with/from/that/I/you/will/oh. If these words appear inside a fixed phrase, keep the phrase entry but do not add the function word alone.
 - Fixed phrases, lyric-specific expressions, and slang should be added as extra vocabulary entries, but they must not replace the individual meaningful word entries inside the phrase.
+- Song Notes lyric translation cards should show every relevant vocabulary item for that line. If `line.words` from the model is incomplete, supplement it from the full song `vocabulary` using `sourceLines`, `surfaceForms`, and exact word/phrase matches against the line text.
+- In Song Notes lyric cards, the Chinese translation should be larger than regular explanation text and use a distinct readable color so children can quickly find it.
+- Song Notes word chips inside lyric cards should use child-readable text sizes; do not make per-line vocabulary chips compact.
+- Song Notes' song title/summary area should scroll together with the lyric cards in the study surface. Do not freeze the song title above a separately scrolling lyric list.
 - Song actions should be short but clear: search candidate, analyze song, add to Word Camp.
 
 ## Kana Quest Specifics
