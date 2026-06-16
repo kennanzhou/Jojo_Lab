@@ -1,0 +1,17 @@
+[Unit]
+Description=Jojo LAB learning app
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/jojo-lab
+EnvironmentFile=/etc/jojo-lab/env
+Environment=PATH=/root/.nvm/versions/node/v22.15.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+ExecStart=/root/.nvm/versions/node/v22.15.0/bin/node /opt/jojo-lab/server.js
+Restart=on-failure
+RestartSec=3
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target
