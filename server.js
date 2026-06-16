@@ -14,6 +14,20 @@ const port = Number(process.env.PORT || 4173);
 const host = process.env.HOST || "127.0.0.1";
 const maxJsonBodyBytes = 32 * 1024 * 1024;
 const maxImageUploadBytes = 14 * 1024 * 1024;
+const authCookieName = "jojo_lab_auth";
+const authSecretFile = path.join(dataDir, "jojo-auth-secret");
+const loginPin = /^\d{4}$/.test(process.env.JOJO_LOGIN_PIN || "") ? process.env.JOJO_LOGIN_PIN : "1106";
+const demoLoginPin = /^\d{4}$/.test(process.env.JOJO_DEMO_PIN || "") ? process.env.JOJO_DEMO_PIN : "8888";
+const loginSessionSeconds = 30 * 24 * 60 * 60;
+const loginAttemptWindowMs = 30 * 1000;
+const loginAttemptWindowLimit = 18;
+const loginFailureResetMs = 10 * 60 * 1000;
+const loginFailureLockThreshold = 5;
+const loginBaseLockMs = 15 * 1000;
+const loginMaxLockMs = 5 * 60 * 1000;
+const loginAttempts = new Map();
+const demoSessions = new Map();
+let authSecretCache = "";
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -137,8 +151,7 @@ function publicState(state, options = {}) {
   return result;
 }
 
-function mergeStatePatch(patch, publicOptions = {}) {
-  const current = readState();
+function applyStatePatch(current, patch) {
   const next = { ...current };
   if (patch.wordProgressPatch && typeof patch.wordProgressPatch === "object") {
     next.wordProgress = { ...(current.wordProgress || {}) };
@@ -187,6 +200,11 @@ function mergeStatePatch(patch, publicOptions = {}) {
     delete next.ossSettings.clearAccessKeyId;
     delete next.ossSettings.clearAccessKeySecret;
   }
+  return next;
+}
+
+function mergeStatePatch(patch, publicOptions = {}) {
+  const next = applyStatePatch(readState(), patch);
   writeState(next);
   return publicState(next, publicOptions);
 }
@@ -212,13 +230,14 @@ function readJson(req) {
   });
 }
 
-function sendJson(res, status, data) {
+function sendJson(res, status, data, headers = {}) {
   res.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store",
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    ...headers
   });
   res.end(JSON.stringify(data));
 }
@@ -231,6 +250,295 @@ function sendCorsPreflight(res) {
     "Access-Control-Max-Age": "86400"
   });
   res.end();
+}
+
+function readOrCreateAuthSecret() {
+  if (process.env.JOJO_AUTH_SECRET && String(process.env.JOJO_AUTH_SECRET).length >= 32) {
+    return String(process.env.JOJO_AUTH_SECRET);
+  }
+  if (process.env.JWT_SECRET && String(process.env.JWT_SECRET).length >= 32) {
+    return String(process.env.JWT_SECRET);
+  }
+  if (authSecretCache) return authSecretCache;
+  ensureDataDir();
+  try {
+    const saved = fs.readFileSync(authSecretFile, "utf8").trim();
+    if (saved.length >= 32) {
+      authSecretCache = saved;
+      return authSecretCache;
+    }
+  } catch {}
+  authSecretCache = crypto.randomBytes(32).toString("hex");
+  fs.writeFileSync(authSecretFile, authSecretCache, { mode: 0o600 });
+  return authSecretCache;
+}
+
+function parseCookies(req) {
+  const cookies = {};
+  String(req.headers.cookie || "").split(";").forEach((part) => {
+    const index = part.indexOf("=");
+    if (index < 0) return;
+    const key = part.slice(0, index).trim();
+    const value = part.slice(index + 1).trim();
+    if (!key) return;
+    try {
+      cookies[key] = decodeURIComponent(value);
+    } catch {
+      cookies[key] = value;
+    }
+  });
+  return cookies;
+}
+
+function isSecureRequest(req) {
+  return req.socket.encrypted || String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim() === "https";
+}
+
+function authCookieHeader(req, token, maxAge = loginSessionSeconds) {
+  const parts = [
+    `${authCookieName}=${encodeURIComponent(token)}`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    `Max-Age=${maxAge}`
+  ];
+  if (isSecureRequest(req)) parts.push("Secure");
+  return parts.join("; ");
+}
+
+function clearAuthCookieHeader(req) {
+  return authCookieHeader(req, "", 0);
+}
+
+function signAuthPayload(payload) {
+  return crypto.createHmac("sha256", readOrCreateAuthSecret()).update(payload).digest("base64url");
+}
+
+function createAuthToken(mode = "full") {
+  const expiresAt = Date.now() + loginSessionSeconds * 1000;
+  const authMode = mode === "demo" ? "demo" : "full";
+  const sessionId = crypto.randomBytes(16).toString("base64url");
+  const payload = `${expiresAt}.${authMode}.${sessionId}`;
+  return `${payload}.${signAuthPayload(payload)}`;
+}
+
+function timingSafeEqualString(left, right) {
+  const leftBuffer = Buffer.from(String(left));
+  const rightBuffer = Buffer.from(String(right));
+  if (leftBuffer.length !== rightBuffer.length) return false;
+  return crypto.timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function authInfoFromToken(token) {
+  const parts = String(token || "").split(".");
+  if (parts.length !== 4) return { authenticated: false, mode: "", sessionId: "", expiresAt: 0 };
+  const [expiresAt, mode, sessionId, signature] = parts;
+  const expires = Number(expiresAt);
+  if (!Number.isFinite(expires) || expires < Date.now() || !["full", "demo"].includes(mode) || !sessionId || !signature) {
+    return { authenticated: false, mode: "", sessionId: "", expiresAt: 0 };
+  }
+  const payload = `${expiresAt}.${mode}.${sessionId}`;
+  if (!timingSafeEqualString(signature, signAuthPayload(payload))) {
+    return { authenticated: false, mode: "", sessionId: "", expiresAt: 0 };
+  }
+  return { authenticated: true, mode, sessionId, expiresAt: expires };
+}
+
+function authInfo(req) {
+  return authInfoFromToken(parseCookies(req)[authCookieName]);
+}
+
+function isAuthenticated(req) {
+  return authInfo(req).authenticated;
+}
+
+function isDemoRequest(req) {
+  return authInfo(req).mode === "demo";
+}
+
+function cloneState(state) {
+  return JSON.parse(JSON.stringify(state));
+}
+
+function createDemoState() {
+  const state = cloneState(readState());
+  state.wordRewards = { smallStars: 0, bigStars: 6 };
+  return state;
+}
+
+function pruneDemoSessions() {
+  const now = Date.now();
+  if (demoSessions.size <= 300) return;
+  for (const [sessionId, entry] of demoSessions) {
+    if (entry.expiresAt < now || now - entry.updatedAt > loginSessionSeconds * 1000) {
+      demoSessions.delete(sessionId);
+    }
+  }
+}
+
+function demoStateForAuth(info) {
+  pruneDemoSessions();
+  let entry = demoSessions.get(info.sessionId);
+  if (!entry || entry.expiresAt < Date.now()) {
+    entry = {
+      state: createDemoState(),
+      expiresAt: info.expiresAt,
+      updatedAt: Date.now()
+    };
+    demoSessions.set(info.sessionId, entry);
+  }
+  entry.updatedAt = Date.now();
+  return entry.state;
+}
+
+function requestState(req) {
+  const info = authInfo(req);
+  if (info.mode === "demo") return demoStateForAuth(info);
+  return readState();
+}
+
+function mergeRequestStatePatch(req, patch, publicOptions = {}) {
+  const info = authInfo(req);
+  if (info.mode !== "demo") return mergeStatePatch(patch, publicOptions);
+  const current = demoStateForAuth(info);
+  const next = applyStatePatch(current, patch);
+  demoSessions.set(info.sessionId, {
+    state: next,
+    expiresAt: info.expiresAt,
+    updatedAt: Date.now()
+  });
+  return publicState(next, publicOptions);
+}
+
+function demoImageUpload(body) {
+  const { mime, buffer } = parseImageDataUrl(body.dataUrl || body.image || "");
+  const name = String(body.fileName || body.name || "demo-image").slice(0, 120);
+  const src = body.dataUrl || body.image || "";
+  return {
+    name,
+    src,
+    url: src,
+    objectKey: "",
+    storage: "demo",
+    mime,
+    size: buffer.length,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function clientLoginKey(req) {
+  const forwarded = String(req.headers["cf-connecting-ip"] || req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown");
+  const ip = forwarded.split(",")[0].trim() || "unknown";
+  const ua = String(req.headers["user-agent"] || "unknown").slice(0, 96);
+  return `${ip}|${ua}`;
+}
+
+function loginBucket(req) {
+  const key = clientLoginKey(req);
+  const now = Date.now();
+  let bucket = loginAttempts.get(key);
+  if (!bucket) {
+    bucket = { failures: 0, lastFailure: 0, lockedUntil: 0, attempts: [] };
+    loginAttempts.set(key, bucket);
+  }
+  bucket.attempts = bucket.attempts.filter((time) => now - time <= loginAttemptWindowMs);
+  if (loginAttempts.size > 500) {
+    for (const [entryKey, entry] of loginAttempts) {
+      if (entry.lockedUntil < now && (!entry.lastFailure || now - entry.lastFailure > loginFailureResetMs)) {
+        loginAttempts.delete(entryKey);
+      }
+    }
+  }
+  return bucket;
+}
+
+function lockPayload(bucket, message = "尝试太快了，稍等一下再输入。") {
+  const retryAfterMs = Math.max(0, bucket.lockedUntil - Date.now());
+  return {
+    ok: false,
+    error: message,
+    retryAfterMs,
+    lockedUntil: retryAfterMs ? new Date(bucket.lockedUntil).toISOString() : ""
+  };
+}
+
+function publicLoginRateLimit(req) {
+  const bucket = loginBucket(req);
+  if (bucket.lockedUntil > Date.now()) {
+    return { locked: true, ...lockPayload(bucket) };
+  }
+  return { locked: false, retryAfterMs: 0, lockedUntil: "" };
+}
+
+function registerLoginAttempt(req) {
+  const bucket = loginBucket(req);
+  const now = Date.now();
+  bucket.attempts.push(now);
+  if (bucket.lockedUntil > now) {
+    return { allowed: false, bucket, status: 429, data: lockPayload(bucket, "暂时锁住了。") };
+  }
+  if (bucket.attempts.length > loginAttemptWindowLimit) {
+    bucket.lockedUntil = now + loginBaseLockMs;
+    return { allowed: false, bucket, status: 429, data: lockPayload(bucket) };
+  }
+  return { allowed: true, bucket };
+}
+
+function registerLoginFailure(bucket) {
+  const now = Date.now();
+  if (!bucket.lastFailure || now - bucket.lastFailure > loginFailureResetMs) {
+    bucket.failures = 0;
+  }
+  bucket.failures += 1;
+  bucket.lastFailure = now;
+  if (bucket.failures >= loginFailureLockThreshold) {
+    const exponent = Math.min(bucket.failures - loginFailureLockThreshold, 5);
+    bucket.lockedUntil = now + Math.min(loginMaxLockMs, loginBaseLockMs * (2 ** exponent));
+    return { status: 429, data: lockPayload(bucket, "暂时锁住了。") };
+  }
+  return {
+    status: 401,
+    data: {
+      ok: false,
+      error: "密码不对。",
+      attemptsRemaining: Math.max(0, loginFailureLockThreshold - bucket.failures),
+      retryAfterMs: 0
+    }
+  };
+}
+
+function clearLoginFailures(req) {
+  loginAttempts.delete(clientLoginKey(req));
+}
+
+async function handleAuthLogin(req, res) {
+  const attempt = registerLoginAttempt(req);
+  if (!attempt.allowed) {
+    sendJson(res, attempt.status, attempt.data);
+    return;
+  }
+  const body = await readJson(req);
+  const pin = String(body.pin || "");
+  let mode = "";
+  if (/^\d{4}$/.test(pin)) {
+    if (timingSafeEqualString(pin, loginPin)) {
+      mode = "full";
+    } else if (timingSafeEqualString(pin, demoLoginPin)) {
+      mode = "demo";
+    }
+  }
+  if (!mode) {
+    const failure = registerLoginFailure(attempt.bucket);
+    sendJson(res, failure.status, failure.data);
+    return;
+  }
+  clearLoginFailures(req);
+  const token = createAuthToken(mode);
+  const info = authInfoFromToken(token);
+  if (mode === "demo") demoStateForAuth(info);
+  sendJson(res, 200, { ok: true, authenticated: true, mode, demo: mode === "demo", expiresInSeconds: loginSessionSeconds }, {
+    "Set-Cookie": authCookieHeader(req, token)
+  });
 }
 
 function cardAssetPathFromSrc(src) {
@@ -1068,8 +1376,8 @@ function buildMinimaxFailureMessage(failures, task) {
   return `MiniMax 请求失败：${detail}。如果浏览器能联网但这里失败，通常是 Node 本机服务没有走系统代理/VPN，或当前 Key 只支持其中一个 MiniMax 域名。`;
 }
 
-async function proxyMinimax(body) {
-  const saved = readState().aiSettings || {};
+async function proxyMinimax(body, req = null) {
+  const saved = (req ? requestState(req) : readState()).aiSettings || {};
   const mode = body.mode || saved.mode || defaultState.aiSettings.mode;
   const endpoint = body.endpoint || saved.endpoint || defaultState.aiSettings.endpoint;
   const model = "MiniMax-M3";
@@ -1158,6 +1466,10 @@ function serveStatic(req, res) {
   });
 }
 
+function sendAuthRequired(res) {
+  sendJson(res, 401, { ok: false, authenticated: false, error: "需要先登录。" });
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     const requestUrl = new URL(req.url, `http://${req.headers.host}`);
@@ -1165,13 +1477,42 @@ const server = http.createServer(async (req, res) => {
       sendCorsPreflight(res);
       return;
     }
+    if (requestUrl.pathname === "/api/auth/status" && req.method === "GET") {
+      const info = authInfo(req);
+      const rateLimit = publicLoginRateLimit(req);
+      sendJson(res, 200, {
+        ok: true,
+        authenticated: info.authenticated,
+        mode: info.authenticated ? info.mode : "",
+        demo: info.mode === "demo",
+        retryAfterMs: rateLimit.retryAfterMs || 0,
+        lockedUntil: rateLimit.lockedUntil || ""
+      });
+      return;
+    }
+    if (requestUrl.pathname === "/api/auth/login" && req.method === "POST") {
+      await handleAuthLogin(req, res);
+      return;
+    }
+    if (requestUrl.pathname === "/api/auth/logout" && req.method === "POST") {
+      const info = authInfo(req);
+      if (info.mode === "demo") demoSessions.delete(info.sessionId);
+      sendJson(res, 200, { ok: true, authenticated: false }, {
+        "Set-Cookie": clearAuthCookieHeader(req)
+      });
+      return;
+    }
+    if (requestUrl.pathname.startsWith("/api/") && !isAuthenticated(req)) {
+      sendAuthRequired(res);
+      return;
+    }
     if (requestUrl.pathname === "/api/state" && req.method === "GET") {
-      sendJson(res, 200, publicState(readState(), { lite: requestUrl.searchParams.get("lite") === "1" }));
+      sendJson(res, 200, publicState(requestState(req), { lite: requestUrl.searchParams.get("lite") === "1" }));
       return;
     }
     if (requestUrl.pathname === "/api/state" && req.method === "POST") {
       const patch = await readJson(req);
-      const data = mergeStatePatch(patch, { lite: true });
+      const data = mergeRequestStatePatch(req, patch, { lite: true });
       const patchKeys = Object.keys(patch);
       if (patch.wordProgressPatch && patchKeys.length === 1) {
         sendJson(res, 200, { wordProgressPatch: patch.wordProgressPatch });
@@ -1181,20 +1522,20 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (requestUrl.pathname === "/api/gallery" && req.method === "GET") {
-      sendJson(res, 200, { gallery: publicState(readState()).gallery || [] });
+      sendJson(res, 200, { gallery: publicState(requestState(req)).gallery || [] });
       return;
     }
     if (requestUrl.pathname === "/api/song-history" && req.method === "GET") {
-      const songHistory = (publicState(readState()).songHistory || []).filter((item) => item?.analysis).slice(0, 20);
+      const songHistory = (publicState(requestState(req)).songHistory || []).filter((item) => item?.analysis).slice(0, 20);
       sendJson(res, 200, { songHistory });
       return;
     }
     if (requestUrl.pathname === "/api/word-progress" && req.method === "GET") {
-      sendJson(res, 200, { wordProgress: readState().wordProgress || {} });
+      sendJson(res, 200, { wordProgress: requestState(req).wordProgress || {} });
       return;
     }
     if (requestUrl.pathname === "/api/deployment/status" && req.method === "GET") {
-      sendJson(res, 200, deploymentStatusForState(readState()));
+      sendJson(res, 200, deploymentStatusForState(requestState(req)));
       return;
     }
     if (requestUrl.pathname === "/api/oss/local-configs" && req.method === "GET") {
@@ -1202,41 +1543,59 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (requestUrl.pathname === "/api/oss/import-local-config" && req.method === "POST") {
+      if (isDemoRequest(req)) {
+        sendJson(res, 200, { ok: true, demo: true, status: localOssConfigStatus(), state: publicState(requestState(req), { lite: true }) });
+        return;
+      }
       sendJson(res, 200, importLocalOssConfig());
       return;
     }
     if (requestUrl.pathname === "/api/oss/upload-image" && req.method === "POST") {
-      sendJson(res, 200, await uploadImageToOss(await readJson(req)));
+      const body = await readJson(req);
+      sendJson(res, 200, isDemoRequest(req) ? demoImageUpload(body) : await uploadImageToOss(body));
       return;
     }
     if (requestUrl.pathname === "/api/oss/test" && req.method === "POST") {
+      if (isDemoRequest(req)) {
+        sendJson(res, 200, { ok: true, demo: true, uploadOk: true, publicReadable: true, message: "Demo 模式不会上传到 OSS；正式模式会执行真实测试。" });
+        return;
+      }
       sendJson(res, 200, await testOssUpload());
       return;
     }
     if (requestUrl.pathname === "/api/oss/migration-status" && req.method === "GET") {
-      sendJson(res, 200, ossMigrationStatusForState(readState()));
+      sendJson(res, 200, ossMigrationStatusForState(requestState(req)));
       return;
     }
     if (requestUrl.pathname === "/api/oss/migrate-images" && req.method === "POST") {
+      if (isDemoRequest(req)) {
+        sendJson(res, 200, { ok: true, demo: true, migrated: 0, skipped: 0, status: ossMigrationStatusForState(requestState(req)), state: publicState(requestState(req), { lite: true }) });
+        return;
+      }
       sendJson(res, 200, await runOssImageMigration());
       return;
     }
     if (requestUrl.pathname === "/api/oss/delete" && req.method === "POST") {
       const body = await readJson(req);
+      if (isDemoRequest(req)) {
+        sendJson(res, 200, { ok: true, demo: true });
+        return;
+      }
       sendJson(res, 200, await deleteOssObject(body.objectKey));
       return;
     }
     if (req.url.startsWith("/api/minimax/chat") && req.method === "POST") {
-      sendJson(res, 200, await proxyMinimax(await readJson(req)));
+      sendJson(res, 200, await proxyMinimax(await readJson(req), req));
       return;
     }
     if (req.url.startsWith("/api/card-cottage/upload") && req.method === "POST") {
-      sendJson(res, 200, await saveCardCottageUpload(await readJson(req)));
+      const body = await readJson(req);
+      sendJson(res, 200, isDemoRequest(req) ? { ...demoImageUpload(body), slot: Number(body.slot), name: String(body.fileName || `Card ${Number(body.slot) + 1}`).slice(0, 120) } : await saveCardCottageUpload(body));
       return;
     }
     if (req.url.startsWith("/api/card-cottage/delete") && req.method === "POST") {
       const body = await readJson(req);
-      deleteCardAssetSrc(body.src);
+      if (!isDemoRequest(req)) deleteCardAssetSrc(body.src);
       sendJson(res, 200, { ok: true });
       return;
     }

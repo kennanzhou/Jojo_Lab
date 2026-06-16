@@ -57,6 +57,20 @@ Primary use cases:
 - On mobile/narrow widths, stacked layouts are fine. Avoid horizontal squeezing.
 - Never solve a fit problem by making the UI too small for iPad fingers.
 
+## Login / Public Access Specifics
+
+- The public app should open behind a cartoon, touch-friendly login layer that matches the retro storybook / learning-lab style.
+- While locked, keep the main app visible only as a blurred/frosted background and do not load private shared state, OSS signed URLs, song history, or progress data.
+- The login UI uses four Word Camp/Card Cottage big gold star images to represent the four entered digits, with large numeric buttons suitable for iPad use.
+- Do not show visible explanatory login text such as "星星密码", subtitles, or instructions. The login surface should be primarily visual.
+- When the user enters a digit, the corresponding big star should visibly break/shatter away and become the entered number.
+- Login digit entry should provide a short, gentle sound cue. Backspace, wrong PIN, and successful unlock should use distinct audio feedback.
+- After a correct PIN, the login surface should dissolve with a brief magic-like transition instead of disappearing instantly; the blurred main app should unfrost during that transition.
+- The real app PIN is 1106 unless explicitly overridden by a local environment variable. Do not hard-code additional visible hints into the UI.
+- Demo mode PIN is 8888. Demo mode starts with 6 Word Camp big gold stars, can exercise normal app flows, and must not persist changes to local shared state, OSS, Git, or server-local upload directories.
+- Demo mode may use in-memory session state and browser memory, but it must not contaminate the user's real localStorage data.
+- Login attempts need server-side anti-spam protection. Repeated wrong PINs should return a visible cooldown and temporarily disable input; do not rely only on frontend throttling.
+
 ## Song Notes Specifics
 
 - "歌曲线索", "歌曲名", and "歌手 / 来源" belong together as one "歌曲信息" window.

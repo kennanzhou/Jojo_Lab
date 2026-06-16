@@ -6,9 +6,9 @@
     <title>Jojo LAB</title>
     <link rel="icon" type="image/svg+xml" href="./assets/jojo-logo.svg">
     <link rel="apple-touch-icon" href="./assets/jojo-logo.svg">
-    <link rel="stylesheet" href="./styles.css?v=20260616-oss-storage-clean">
+    <link rel="stylesheet" href="./styles.css?v=20260616-login-magic">
   </head>
-  <body>
+  <body class="auth-locked auth-checking">
     <div class="app-shell">
       <header class="topbar">
         <button class="brand" id="openSettings" type="button" aria-label="回到首页">
@@ -439,6 +439,46 @@
         </section>
       </main>
     </div>
+    <div class="login-gate" id="loginGate" role="dialog" aria-modal="true" aria-label="Jojo LAB 登录">
+      <section class="login-card" aria-label="Jojo LAB 登录">
+        <div class="login-stars" id="loginStars" aria-label="已输入 0 位">
+          <span class="login-star-slot" aria-hidden="true">
+            <img class="login-star-image" src="./assets/gold-star-reward.png" alt="">
+            <b class="login-star-digit"></b>
+            <i></i><i></i><i></i><i></i><i></i>
+          </span>
+          <span class="login-star-slot" aria-hidden="true">
+            <img class="login-star-image" src="./assets/gold-star-reward.png" alt="">
+            <b class="login-star-digit"></b>
+            <i></i><i></i><i></i><i></i><i></i>
+          </span>
+          <span class="login-star-slot" aria-hidden="true">
+            <img class="login-star-image" src="./assets/gold-star-reward.png" alt="">
+            <b class="login-star-digit"></b>
+            <i></i><i></i><i></i><i></i><i></i>
+          </span>
+          <span class="login-star-slot" aria-hidden="true">
+            <img class="login-star-image" src="./assets/gold-star-reward.png" alt="">
+            <b class="login-star-digit"></b>
+            <i></i><i></i><i></i><i></i><i></i>
+          </span>
+        </div>
+        <div class="login-keypad" id="loginKeypad" aria-label="数字密码键盘">
+          <button type="button" data-login-digit="1">1</button>
+          <button type="button" data-login-digit="2">2</button>
+          <button type="button" data-login-digit="3">3</button>
+          <button type="button" data-login-digit="4">4</button>
+          <button type="button" data-login-digit="5">5</button>
+          <button type="button" data-login-digit="6">6</button>
+          <button type="button" data-login-digit="7">7</button>
+          <button type="button" data-login-digit="8">8</button>
+          <button type="button" data-login-digit="9">9</button>
+          <button type="button" data-login-digit="0">0</button>
+          <button class="login-backspace" type="button" data-login-action="backspace" aria-label="删除一位">⌫</button>
+        </div>
+        <div class="login-status" id="loginStatus" role="status" aria-live="polite"></div>
+      </section>
+    </div>
 
     <dialog class="card-preview-dialog" id="cardPreviewDialog" aria-label="奖励卡大图预览">
       <button class="card-preview-close" id="closeCardPreview" type="button" aria-label="关闭大图">×</button>
@@ -779,6 +819,6 @@
       </form>
     </dialog>
 
-    <script src="./app.js?v=20260616-oss-storage-clean"></script>
+    <script src="./app.js?v=20260616-login-magic"></script>
   </body>
 </html>

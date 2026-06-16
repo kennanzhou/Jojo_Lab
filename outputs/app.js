@@ -35254,6 +35254,13 @@ let latestLocalOssConfigStatus = null;
 let armedHomeTileHref = "";
 let wordRepeatRecognizer = null;
 let pendingArtFile = null;
+let appBooted = false;
+let authMode = "locked";
+let demoMode = false;
+let loginSubmitting = false;
+let loginDigits = [];
+let loginCountdownTimer = null;
+const demoLocalStore = new Map();
 const maxProgressRows = 6;
 const minWordsPerBank = 10;
 const wordSmallStarsPerBig = 10;
@@ -35266,6 +35273,22 @@ const wordBankLabels = {
   "ket-official": "KET 官方词汇表",
   all: "全部词库"
 };
+
+function saveLocalItem(key, value) {
+  if (demoMode) {
+    demoLocalStore.set(String(key), String(value));
+    return;
+  }
+  localStorage.setItem(key, value);
+}
+
+function removeLocalItem(key) {
+  if (demoMode) {
+    demoLocalStore.delete(String(key));
+    return;
+  }
+  localStorage.removeItem(key);
+}
 
 const wordImportGuideText = `请把词汇表整理成一个 JSON 对象，方便导入 Jojo LAB 的 Word Camp。
 
@@ -35583,6 +35606,9 @@ function playCue(type) {
   const AudioContext = window.AudioContext || window.webkitAudioContext;
   if (!AudioContext) return;
   const context = new AudioContext();
+  if (context.state === "suspended") {
+    context.resume().catch(() => {});
+  }
   const notes = type === "good" ? [523.25, 659.25, 783.99] : [220, 164.81];
   notes.forEach((frequency, index) => {
     const start = context.currentTime + index * 0.09;
@@ -35638,7 +35664,7 @@ function showToast(message, type = "good") {
 
 function incrementPlayed() {
   state.played += 1;
-  localStorage.setItem("jojoPlayed", String(state.played));
+  saveLocalItem("jojoPlayed", String(state.played));
   $("#playedCount").textContent = state.played;
   saveSharedState({ played: state.played });
 }
@@ -35649,7 +35675,7 @@ function loadWordProgress() {
     Object.keys(progress).forEach((key) => {
       if (key.split(":").length < 3) delete progress[key];
     });
-    localStorage.setItem("jojoWordProgress", JSON.stringify(progress));
+    saveLocalItem("jojoWordProgress", JSON.stringify(progress));
     return progress;
   } catch {
     return {};
@@ -35679,7 +35705,7 @@ function wordDayKey(date = new Date()) {
 
 function saveWordProgressLocal(immediate = false) {
   window.clearTimeout(wordProgressStorageTimer);
-  const write = () => localStorage.setItem("jojoWordProgress", JSON.stringify(state.wordProgress));
+  const write = () => saveLocalItem("jojoWordProgress", JSON.stringify(state.wordProgress));
   if (immediate) {
     write();
   } else {
@@ -35690,7 +35716,7 @@ function saveWordProgressLocal(immediate = false) {
 window.addEventListener("pagehide", () => {
   if (wordProgressStorageTimer) {
     window.clearTimeout(wordProgressStorageTimer);
-    localStorage.setItem("jojoWordProgress", JSON.stringify(state.wordProgress));
+    saveLocalItem("jojoWordProgress", JSON.stringify(state.wordProgress));
   }
 });
 
@@ -35713,7 +35739,7 @@ function loadWordRewards() {
 }
 
 function persistWordRewards() {
-  localStorage.setItem("jojoWordRewards", JSON.stringify(state.wordRewards));
+  saveLocalItem("jojoWordRewards", JSON.stringify(state.wordRewards));
   saveSharedState({ wordRewards: state.wordRewards });
 }
 
@@ -35730,7 +35756,7 @@ function saveAppSettings() {
     ...defaultAppSettings,
     wordRepeatVoEnabled: Boolean($("#wordRepeatVoEnabled")?.checked)
   };
-  localStorage.setItem("jojoAppSettings", JSON.stringify(state.appSettings));
+  saveLocalItem("jojoAppSettings", JSON.stringify(state.appSettings));
   saveSharedState({ appSettings: state.appSettings });
 }
 
@@ -35749,7 +35775,7 @@ function loadKanaProgress() {
 }
 
 function persistKanaProgress() {
-  localStorage.setItem("jojoKanaProgress", JSON.stringify(state.kanaProgress));
+  saveLocalItem("jojoKanaProgress", JSON.stringify(state.kanaProgress));
   saveSharedState({ kanaProgress: state.kanaProgress });
 }
 
@@ -35772,7 +35798,7 @@ function loadKanaRewards() {
 
 function persistKanaRewards() {
   state.kanaRewards = normalizeKanaRewards(state.kanaRewards);
-  localStorage.setItem("jojoKanaRewards", JSON.stringify(state.kanaRewards));
+  saveLocalItem("jojoKanaRewards", JSON.stringify(state.kanaRewards));
   saveSharedState({ kanaRewards: state.kanaRewards });
 }
 
@@ -35835,7 +35861,7 @@ function isWordMastered(word, bank = currentWordBank(), mode = $("#wordMode")?.v
 }
 
 function persistDailyWordPlan() {
-  localStorage.setItem("jojoDailyWordPlan", JSON.stringify(state.dailyWordPlan));
+  saveLocalItem("jojoDailyWordPlan", JSON.stringify(state.dailyWordPlan));
   saveSharedState({ dailyWordCount: state.dailyWordCount, dailyWordPlan: state.dailyWordPlan });
 }
 
@@ -36019,7 +36045,7 @@ function loadCustomWordBanks() {
 }
 
 function saveCustomWordBanks() {
-  localStorage.setItem("jojoCustomWordBanks", JSON.stringify(state.customWordBanks));
+  saveLocalItem("jojoCustomWordBanks", JSON.stringify(state.customWordBanks));
   invalidateWordCaches();
   saveSharedState({ customWordBanks: state.customWordBanks, wordBank: state.wordBank });
 }
@@ -36147,24 +36173,24 @@ function normalizeCardCottageState(value = {}) {
 function loadCardCottageState() {
   try {
     const cardState = normalizeCardCottageState(JSON.parse(localStorage.getItem("jojoCardCottage") || "{}"));
-    localStorage.setItem("jojoCardCottage", JSON.stringify(cardState));
+    saveLocalItem("jojoCardCottage", JSON.stringify(cardState));
     return cardState;
   } catch {
     const cardState = normalizeCardCottageState();
-    localStorage.setItem("jojoCardCottage", JSON.stringify(cardState));
+    saveLocalItem("jojoCardCottage", JSON.stringify(cardState));
     return cardState;
   }
 }
 
 function saveCardCottageState() {
-  localStorage.setItem("jojoCardCottage", JSON.stringify(state.cardCottage));
+  saveLocalItem("jojoCardCottage", JSON.stringify(state.cardCottage));
   saveSharedState({ cardCottage: state.cardCottage });
   invalidateOssImageStorageStatus();
 }
 
 function saveSongHistory() {
   state.songHistory = state.songHistory.filter((item) => item?.analysis).slice(0, 20);
-  localStorage.setItem("jojoSongHistory", JSON.stringify(state.songHistory));
+  saveLocalItem("jojoSongHistory", JSON.stringify(state.songHistory));
   saveSharedState({ songHistory: state.songHistory });
   renderSongHistory();
 }
@@ -36290,8 +36316,8 @@ function importWordBankFromForm() {
     wordBankLabels[bank.id] = bank.title;
     state.deletedWordBanks = state.deletedWordBanks.filter((id) => id !== bank.id);
     state.wordBank = bank.id;
-    localStorage.setItem("jojoDeletedWordBanks", JSON.stringify(state.deletedWordBanks));
-    localStorage.setItem("jojoWordBank", state.wordBank);
+    saveLocalItem("jojoDeletedWordBanks", JSON.stringify(state.deletedWordBanks));
+    saveLocalItem("jojoWordBank", state.wordBank);
     saveCustomWordBanks();
     syncWordBankSelect();
     renderWordStudyState({ library: true, syncSelect: true });
@@ -36338,7 +36364,7 @@ function repairCurrentWordBank() {
   const usable = wordBankLabels[bank] && !isWordBankDeleted(bank) && rawWordBankSize(bank) >= minWordsPerBank;
   if (usable) return bank;
   state.wordBank = wordBankLabels["ket-official"] && rawWordBankSize("ket-official") >= minWordsPerBank ? "ket-official" : "all";
-  localStorage.setItem("jojoWordBank", state.wordBank);
+  saveLocalItem("jojoWordBank", state.wordBank);
   saveSharedState({ wordBank: state.wordBank });
   return state.wordBank;
 }
@@ -36369,7 +36395,7 @@ function syncWordBankSelect() {
   select.innerHTML = availableBanks.map((bank) => `<option value="${escapeHtml(bank)}">${escapeHtml(wordBankLabels[bank] || bank)}</option>`).join("");
   if (!availableBanks.includes(currentWordBank())) {
     state.wordBank = availableBanks.find((bank) => bank !== "all") || "all";
-    localStorage.setItem("jojoWordBank", state.wordBank);
+    saveLocalItem("jojoWordBank", state.wordBank);
   }
   select.value = currentWordBank();
 }
@@ -36438,7 +36464,7 @@ function loadHomeBackgroundPresets() {
 
 function storeOssSettingsPublic(settings) {
   state.ossSettings = { ...defaultOssSettings, ...state.ossSettings, ...settings, accessKeyId: "", accessKeySecret: "" };
-  localStorage.setItem("jojoOssSettings", JSON.stringify({
+  saveLocalItem("jojoOssSettings", JSON.stringify({
     provider: state.ossSettings.provider,
     region: state.ossSettings.region,
     endpoint: state.ossSettings.endpoint,
@@ -36452,6 +36478,7 @@ function storeOssSettingsPublic(settings) {
 }
 
 function ossUploadReady() {
+  if (demoMode) return true;
   const settings = state.ossSettings || {};
   return Boolean(
     serverPersistenceAvailable
@@ -36463,6 +36490,7 @@ function ossUploadReady() {
 }
 
 function ossUploadBlockerMessage() {
+  if (demoMode) return "Demo 模式不会上传到 OSS。";
   const settings = state.ossSettings || {};
   if (!serverPersistenceAvailable) return "本机共享服务未连接，无法上传到 OSS。";
   if (!settings.bucket) return "请先在主页齿轮填写 OSS Bucket。";
@@ -36752,7 +36780,7 @@ function setHomeBackgroundStatus(message, tone = "") {
 
 function persistHomeBackground() {
   state.homeBackground = { ...defaultHomeBackground, ...state.homeBackground, src: homeBackgroundSrc(state.homeBackground) };
-  localStorage.setItem("jojoHomeBackground", JSON.stringify(state.homeBackground));
+  saveLocalItem("jojoHomeBackground", JSON.stringify(state.homeBackground));
   saveSharedState({ homeBackground: state.homeBackground });
   applyHomeBackground();
   renderHomeBackgroundSettings();
@@ -36792,21 +36820,21 @@ function renderHomeBackgroundSettings() {
 async function uploadHomeBackgroundFile(file) {
   if (!file) return;
   try {
-    setHomeBackgroundStatus("正在上传首页背景到 OSS...", "good");
+    setHomeBackgroundStatus(demoMode ? "正在载入 Demo 首页背景..." : "正在上传首页背景到 OSS...", "good");
     const upload = await uploadImageFileToOss(file, "home-backgrounds");
     state.homeBackground = {
       mode: "custom",
       preset: "",
       src: upload.src,
       objectKey: upload.objectKey,
-      storage: "oss",
+      storage: upload.storage || "oss",
       name: upload.name || file.name,
       mime: upload.mime,
       size: upload.size,
       updatedAt: upload.updatedAt
     };
     persistHomeBackground();
-    setHomeBackgroundStatus("首页背景已上传到 OSS 并保存。", "good");
+    setHomeBackgroundStatus(demoMode ? "Demo 首页背景已更新，本次操作不会保存。" : "首页背景已上传到 OSS 并保存。", "good");
   } catch (error) {
     setHomeBackgroundStatus(error.message || "首页背景上传失败。", "bad");
   }
@@ -36909,7 +36937,7 @@ async function saveAiSettingsFromForm() {
     apiKey: serverPersistenceAvailable ? "" : apiKey,
     hasApiKey: apiKey ? true : Boolean(state.aiSettings.hasApiKey)
   };
-  localStorage.setItem("jojoAiSettings", JSON.stringify({
+  saveLocalItem("jojoAiSettings", JSON.stringify({
     mode: state.aiSettings.mode,
     endpoint: state.aiSettings.endpoint,
     model: state.aiSettings.model,
@@ -36949,10 +36977,10 @@ function fillAiSettingsForm() {
 async function saveWordSettingsFromForm() {
   const previousDailyWordCount = normalizeDailyWordCount(state.dailyWordCount);
   state.dailyWordCount = normalizeDailyWordCount($("#dailyWordCount").value);
-  localStorage.setItem("jojoDailyWordCount", String(state.dailyWordCount));
+  saveLocalItem("jojoDailyWordCount", String(state.dailyWordCount));
   if (state.dailyWordCount !== previousDailyWordCount) {
     state.dailyWordPlan = null;
-    localStorage.removeItem("jojoDailyWordPlan");
+    removeLocalItem("jojoDailyWordPlan");
   }
   saveAppSettings();
   if (serverPersistenceAvailable) await postSharedStatePatch({
@@ -37027,82 +37055,82 @@ function applySharedState(data) {
   if (data.wordProgress) state.wordProgress = data.wordProgress;
   if (data.wordBank) {
     state.wordBank = data.wordBank;
-    localStorage.setItem("jojoWordBank", state.wordBank);
+    saveLocalItem("jojoWordBank", state.wordBank);
   }
   if (Array.isArray(data.deletedWordBanks)) {
     state.deletedWordBanks = data.deletedWordBanks;
-    localStorage.setItem("jojoDeletedWordBanks", JSON.stringify(state.deletedWordBanks));
+    saveLocalItem("jojoDeletedWordBanks", JSON.stringify(state.deletedWordBanks));
     selectedBankCache = { key: "", words: [] };
   }
   if (typeof data.kanaScore === "number") {
     state.kanaScore = data.kanaScore;
-    localStorage.setItem("jojoKanaScore", String(state.kanaScore));
+    saveLocalItem("jojoKanaScore", String(state.kanaScore));
   }
   if (data.kanaProgress && typeof data.kanaProgress === "object") {
     state.kanaProgress = data.kanaProgress;
-    localStorage.setItem("jojoKanaProgress", JSON.stringify(state.kanaProgress));
+    saveLocalItem("jojoKanaProgress", JSON.stringify(state.kanaProgress));
   }
   if (data.kanaRewards && typeof data.kanaRewards === "object") {
     state.kanaRewards = normalizeKanaRewards(data.kanaRewards);
-    localStorage.setItem("jojoKanaRewards", JSON.stringify(state.kanaRewards));
+    saveLocalItem("jojoKanaRewards", JSON.stringify(state.kanaRewards));
   }
   if (typeof data.played === "number") {
     state.played = data.played;
-    localStorage.setItem("jojoPlayed", String(state.played));
+    saveLocalItem("jojoPlayed", String(state.played));
   }
   if (typeof data.dailyWordCount === "number") {
     state.dailyWordCount = normalizeDailyWordCount(data.dailyWordCount);
-    localStorage.setItem("jojoDailyWordCount", String(state.dailyWordCount));
+    saveLocalItem("jojoDailyWordCount", String(state.dailyWordCount));
   }
   if ("dailyWordPlan" in data) {
     state.dailyWordPlan = data.dailyWordPlan;
     if (state.dailyWordPlan) {
-      localStorage.setItem("jojoDailyWordPlan", JSON.stringify(state.dailyWordPlan));
+      saveLocalItem("jojoDailyWordPlan", JSON.stringify(state.dailyWordPlan));
     } else {
-      localStorage.removeItem("jojoDailyWordPlan");
+      removeLocalItem("jojoDailyWordPlan");
     }
   }
   if (data.wordRewards) {
     state.wordRewards = { smallStars: 0, bigStars: 0, ...data.wordRewards };
-    localStorage.setItem("jojoWordRewards", JSON.stringify(state.wordRewards));
+    saveLocalItem("jojoWordRewards", JSON.stringify(state.wordRewards));
   }
   if (typeof data.artMode === "boolean") {
     state.artMode = data.artMode;
-    localStorage.setItem("jojoArtMode", String(state.artMode));
+    saveLocalItem("jojoArtMode", String(state.artMode));
   }
   if (Array.isArray(data.gallery)) {
     state.gallery = data.gallery;
-    localStorage.setItem("jojoGallery", JSON.stringify(state.gallery));
+    saveLocalItem("jojoGallery", JSON.stringify(state.gallery));
   }
   if (data.homeBackground && typeof data.homeBackground === "object") {
     state.homeBackground = { ...defaultHomeBackground, ...data.homeBackground };
-    localStorage.setItem("jojoHomeBackground", JSON.stringify(state.homeBackground));
+    saveLocalItem("jojoHomeBackground", JSON.stringify(state.homeBackground));
     applyHomeBackground();
   }
   if (Array.isArray(data.homeBackgroundPresets)) {
     state.homeBackgroundPresets = normalizeHomeBackgroundPresets(data.homeBackgroundPresets);
-    localStorage.setItem("jojoHomeBackgroundPresets", JSON.stringify(state.homeBackgroundPresets));
+    saveLocalItem("jojoHomeBackgroundPresets", JSON.stringify(state.homeBackgroundPresets));
     applyHomeBackground();
     renderHomeBackgroundSettings();
   }
   if (data.appSettings && typeof data.appSettings === "object") {
     state.appSettings = { ...defaultAppSettings, ...data.appSettings };
-    localStorage.setItem("jojoAppSettings", JSON.stringify(state.appSettings));
+    saveLocalItem("jojoAppSettings", JSON.stringify(state.appSettings));
     fillAppSettingsForm();
   }
   if (Array.isArray(data.songHistory)) {
     state.songHistory = data.songHistory.filter((item) => item?.analysis).slice(0, 20);
-    localStorage.setItem("jojoSongHistory", JSON.stringify(state.songHistory));
+    saveLocalItem("jojoSongHistory", JSON.stringify(state.songHistory));
   }
   if (Array.isArray(data.customWordBanks)) {
     state.customWordBanks = data.customWordBanks;
-    localStorage.setItem("jojoCustomWordBanks", JSON.stringify(state.customWordBanks));
+    saveLocalItem("jojoCustomWordBanks", JSON.stringify(state.customWordBanks));
     invalidateWordCaches();
     installCustomWordBankLabels();
   }
   if (data.aiSettings) {
     state.aiSettings = { ...state.aiSettings, ...data.aiSettings, model: "MiniMax-M3", customModel: "", apiKey: "" };
-    localStorage.setItem("jojoAiSettings", JSON.stringify({
+    saveLocalItem("jojoAiSettings", JSON.stringify({
       mode: state.aiSettings.mode,
       endpoint: state.aiSettings.endpoint,
       model: "MiniMax-M3",
@@ -37116,15 +37144,15 @@ function applySharedState(data) {
   }
   if (data.phonicsQuest && typeof data.phonicsQuest === "object") {
     state.phonicsQuest = { ...loadPhonicsQuestState(), ...data.phonicsQuest };
-    localStorage.setItem("jojoPhonicsQuestState", JSON.stringify(state.phonicsQuest));
+    saveLocalItem("jojoPhonicsQuestState", JSON.stringify(state.phonicsQuest));
   }
   if (data.phonicsRewards && typeof data.phonicsRewards === "object") {
     state.phonicsRewards = normalizePhonicsRewards(data.phonicsRewards);
-    localStorage.setItem("jojoPhonicsRewards", JSON.stringify(state.phonicsRewards));
+    saveLocalItem("jojoPhonicsRewards", JSON.stringify(state.phonicsRewards));
   }
   if (data.cardCottage && typeof data.cardCottage === "object") {
     state.cardCottage = normalizeCardCottageState(data.cardCottage);
-    localStorage.setItem("jojoCardCottage", JSON.stringify(state.cardCottage));
+    saveLocalItem("jojoCardCottage", JSON.stringify(state.cardCottage));
   }
 }
 
@@ -37152,7 +37180,7 @@ async function loadSharedGallery() {
     const data = await response.json();
     if (Array.isArray(data.gallery)) {
       state.gallery = data.gallery;
-      localStorage.setItem("jojoGallery", JSON.stringify(state.gallery));
+      saveLocalItem("jojoGallery", JSON.stringify(state.gallery));
       galleryPersistenceReady = true;
       renderGallery({ persist: false });
     }
@@ -37172,7 +37200,7 @@ async function loadSharedSongHistory({ restoreLatest = false } = {}) {
     const data = await response.json();
     if (Array.isArray(data.songHistory)) {
       state.songHistory = data.songHistory.filter((item) => item?.analysis).slice(0, 20);
-      localStorage.setItem("jojoSongHistory", JSON.stringify(state.songHistory));
+      saveLocalItem("jojoSongHistory", JSON.stringify(state.songHistory));
       if (restoreLatest && state.songHistory.some((item) => item?.analysis)) {
         restoreSongHistory(0);
       } else {
@@ -37192,7 +37220,7 @@ async function loadSharedWordProgress() {
     const data = await response.json();
     if (data.wordProgress && typeof data.wordProgress === "object") {
       state.wordProgress = data.wordProgress;
-      localStorage.setItem("jojoWordProgress", JSON.stringify(state.wordProgress));
+      saveLocalItem("jojoWordProgress", JSON.stringify(state.wordProgress));
       renderWordStudyState({ syncSelect: true, library: currentViewId() === "words" });
     }
   } catch {}
@@ -37278,7 +37306,7 @@ function applyArtMode() {
 
 function toggleArtMode() {
   state.artMode = !state.artMode;
-  localStorage.setItem("jojoArtMode", String(state.artMode));
+  saveLocalItem("jojoArtMode", String(state.artMode));
   saveSharedState({ artMode: state.artMode });
   applyArtMode();
 }
@@ -37375,7 +37403,7 @@ function handleKanaAnswer(isCorrect, correct) {
       awardKanaMasteryReward(state.kana.progressKey);
     }
     state.kanaScore += 1;
-    localStorage.setItem("jojoKanaScore", String(state.kanaScore));
+    saveLocalItem("jojoKanaScore", String(state.kanaScore));
     $("#kanaScore").textContent = state.kanaScore;
     feedback.textContent = "答对了。下一题来了。";
     feedback.className = "feedback good";
@@ -37572,7 +37600,7 @@ function resetCurrentWordBank() {
     });
   });
   state.dailyWordPlan = null;
-  localStorage.removeItem("jojoDailyWordPlan");
+  removeLocalItem("jojoDailyWordPlan");
   persistWordProgress();
   saveSharedState({ dailyWordPlan: state.dailyWordPlan });
   renderWordStudyState({ library: true, syncSelect: true });
@@ -37612,8 +37640,8 @@ function deleteCurrentWordBank() {
     selectedBankCache = { key: "", words: [] };
   }
   state.wordBank = availableWordBankKeys().find((key) => key !== "all" && key !== bank) || "all";
-  localStorage.setItem("jojoDeletedWordBanks", JSON.stringify(state.deletedWordBanks));
-  localStorage.setItem("jojoWordBank", state.wordBank);
+  saveLocalItem("jojoDeletedWordBanks", JSON.stringify(state.deletedWordBanks));
+  saveLocalItem("jojoWordBank", state.wordBank);
   persistWordProgress();
   saveSharedState({ deletedWordBanks: state.deletedWordBanks, wordBank: state.wordBank, wordProgress: state.wordProgress });
   renderWordStudyState({ library: true, syncSelect: true });
@@ -37898,12 +37926,12 @@ function loadPhonicsRewards() {
 
 function persistPhonicsRewards() {
   state.phonicsRewards = normalizePhonicsRewards(state.phonicsRewards);
-  localStorage.setItem("jojoPhonicsRewards", JSON.stringify(state.phonicsRewards));
+  saveLocalItem("jojoPhonicsRewards", JSON.stringify(state.phonicsRewards));
   saveSharedState({ phonicsRewards: state.phonicsRewards });
 }
 
 function savePhonicsQuestState() {
-  localStorage.setItem("jojoPhonicsQuestState", JSON.stringify(state.phonicsQuest));
+  saveLocalItem("jojoPhonicsQuestState", JSON.stringify(state.phonicsQuest));
   saveSharedState({ phonicsQuest: state.phonicsQuest });
 }
 
@@ -39030,8 +39058,8 @@ function addSongAnalysisToWordCamp() {
     wordBankLabels[bank.id] = bank.title;
     state.deletedWordBanks = state.deletedWordBanks.filter((id) => id !== bank.id);
     state.wordBank = bank.id;
-    localStorage.setItem("jojoDeletedWordBanks", JSON.stringify(state.deletedWordBanks));
-    localStorage.setItem("jojoWordBank", state.wordBank);
+    saveLocalItem("jojoDeletedWordBanks", JSON.stringify(state.deletedWordBanks));
+    saveLocalItem("jojoWordBank", state.wordBank);
     saveCustomWordBanks();
     syncWordBankSelect();
     renderWordStudyState({ library: true, syncSelect: true });
@@ -39122,7 +39150,7 @@ function analyzeArt(title, note) {
 }
 
 function persistGallery() {
-  localStorage.setItem("jojoGallery", JSON.stringify(state.gallery));
+  saveLocalItem("jojoGallery", JSON.stringify(state.gallery));
   $("#galleryCount").textContent = state.gallery.length;
   if (galleryPersistenceReady) saveSharedState({ gallery: state.gallery });
   invalidateOssImageStorageStatus();
@@ -39265,7 +39293,7 @@ async function addArtwork(event) {
     assertOssUploadReady();
     const dataUrl = await readFileAsDataUrl(file);
     const dimensions = await imageDimensions(dataUrl);
-    showToast("正在上传作品到 OSS...", "good");
+    showToast(demoMode ? "Demo 正在载入作品..." : "正在上传作品到 OSS...", "good");
     const upload = await uploadImageDataUrlToOss(dataUrl, file.name || "artwork", "art-gallery");
     const title = $("#artTitle").value.trim();
     const note = $("#artNote").value.trim();
@@ -39276,7 +39304,7 @@ async function addArtwork(event) {
       note,
       image: upload.src,
       objectKey: upload.objectKey,
-      storage: "oss",
+      storage: upload.storage || "oss",
       width: dimensions.width,
       height: dimensions.height,
       ai: analyzeArt(title, note)
@@ -39735,7 +39763,7 @@ function bindEvents() {
   });
   $("#settingsWordBank").addEventListener("change", () => {
     state.wordBank = $("#settingsWordBank").value;
-    localStorage.setItem("jojoWordBank", state.wordBank);
+    saveLocalItem("jojoWordBank", state.wordBank);
     saveSharedState({ wordBank: state.wordBank });
     renderWordStudyState({ library: true, syncSelect: true });
     newWordQuestion();
@@ -39853,7 +39881,273 @@ function bindEvents() {
   });
 }
 
-async function init() {
+function loginElements() {
+  return {
+    gate: $("#loginGate"),
+    card: $(".login-card"),
+    stars: $all("#loginStars span"),
+    starBox: $("#loginStars"),
+    status: $("#loginStatus"),
+    buttons: $all("#loginKeypad button")
+  };
+}
+
+function setAuthMode(mode = "") {
+  authMode = mode === "demo" ? "demo" : "full";
+  demoMode = authMode === "demo";
+  document.body.classList.toggle("demo-mode", demoMode);
+}
+
+function updateLoginStars() {
+  const { stars, starBox } = loginElements();
+  stars.forEach((star, index) => {
+    const digit = loginDigits[index] || "";
+    const filled = Boolean(digit);
+    const digitNode = star.querySelector(".login-star-digit");
+    if (digitNode) digitNode.textContent = digit;
+    star.classList.toggle("filled", filled);
+    if (!filled) star.classList.remove("shattering");
+  });
+  if (starBox) starBox.setAttribute("aria-label", `已输入 ${loginDigits.length} 位`);
+}
+
+function triggerLoginStarBreak(index) {
+  const star = loginElements().stars[index];
+  if (!star) return;
+  star.classList.remove("shattering");
+  void star.offsetWidth;
+  star.classList.add("shattering");
+  window.setTimeout(() => star.classList.remove("shattering"), 560);
+}
+
+function playLoginSound(type = "digit") {
+  const AudioContext = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContext) return;
+  const context = new AudioContext();
+  if (context.state === "suspended") {
+    context.resume().catch(() => {});
+  }
+  const patterns = {
+    digit: { notes: [523.25, 783.99], duration: 0.12, gap: 0.045, gain: 0.055, wave: "sine" },
+    backspace: { notes: [392, 293.66], duration: 0.1, gap: 0.04, gain: 0.045, wave: "triangle" },
+    error: { notes: [220, 185], duration: 0.15, gap: 0.055, gain: 0.07, wave: "triangle" },
+    success: { notes: [659.25, 783.99, 1046.5, 1318.51], duration: 0.16, gap: 0.07, gain: 0.075, wave: "sine" }
+  };
+  const pattern = patterns[type] || patterns.digit;
+  pattern.notes.forEach((frequency, index) => {
+    const start = context.currentTime + index * pattern.gap;
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = pattern.wave;
+    oscillator.frequency.setValueAtTime(frequency, start);
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(pattern.gain, start + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + pattern.duration);
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start(start);
+    oscillator.stop(start + pattern.duration + 0.02);
+  });
+  window.setTimeout(() => context.close(), Math.max(360, pattern.notes.length * pattern.gap * 1000 + 260));
+}
+
+function setLoginStatus(message, tone = "", label = "") {
+  const { status } = loginElements();
+  if (!status) return;
+  status.textContent = message;
+  status.className = `login-status ${tone}`.trim();
+  if (label) {
+    status.setAttribute("aria-label", label);
+  } else {
+    status.removeAttribute("aria-label");
+  }
+}
+
+function setLoginButtonsDisabled(disabled) {
+  loginElements().buttons.forEach((button) => {
+    button.disabled = disabled;
+  });
+}
+
+function clearLoginDigits() {
+  loginDigits = [];
+  updateLoginStars();
+}
+
+function shakeLoginCard() {
+  const { card } = loginElements();
+  if (!card) return;
+  card.classList.remove("shake");
+  void card.offsetWidth;
+  card.classList.add("shake");
+}
+
+function resetLoginDissolveState() {
+  const { gate, card } = loginElements();
+  gate?.classList.remove("is-unlocking");
+  card?.classList.remove("is-dissolving");
+  document.body.classList.remove("auth-unlocking");
+}
+
+function dissolveLoginGate() {
+  const { gate, card } = loginElements();
+  if (!gate) return Promise.resolve();
+  document.body.classList.add("auth-unlocking");
+  gate.classList.add("is-unlocking");
+  card?.classList.add("is-dissolving");
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, 980);
+  });
+}
+
+function setLoginCooldown(ms = 0, message = "暂时锁住了。") {
+  window.clearInterval(loginCountdownTimer);
+  const until = Date.now() + Math.max(0, Number(ms || 0));
+  if (until <= Date.now()) {
+    setLoginButtonsDisabled(false);
+    return;
+  }
+  clearLoginDigits();
+  setLoginButtonsDisabled(true);
+  const tick = () => {
+    const remaining = Math.ceil((until - Date.now()) / 1000);
+    if (remaining <= 0) {
+      window.clearInterval(loginCountdownTimer);
+      setLoginButtonsDisabled(false);
+      setLoginStatus("", "", "可以继续输入");
+      return;
+    }
+    setLoginStatus(String(remaining), "bad", `${message} ${remaining} 秒后再试`);
+  };
+  tick();
+  loginCountdownTimer = window.setInterval(tick, 500);
+}
+
+async function beginAuthenticatedSession(data = {}, options = {}) {
+  setAuthMode(data.mode || "full");
+  setLoginButtonsDisabled(true);
+  setLoginStatus("…", "good", demoMode ? "正在打开 Demo 模式" : "正在打开 Jojo LAB");
+  if (options.animate !== false) playLoginSound("success");
+  await startApp();
+  const { gate } = loginElements();
+  if (options.animate !== false) {
+    await dissolveLoginGate();
+  }
+  document.body.classList.remove("auth-locked", "auth-checking", "auth-unlocking");
+  if (gate) gate.hidden = true;
+  resetLoginDissolveState();
+  if (demoMode) showToast("Demo 模式已开启：6 颗大星星，操作不会保存。", "good");
+}
+
+async function submitLoginPin() {
+  if (loginSubmitting || loginDigits.length !== 4) return;
+  loginSubmitting = true;
+  setLoginButtonsDisabled(true);
+  setLoginStatus("…", "good", "正在确认");
+  try {
+    const response = await fetch(apiUrl("/api/auth/login"), {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin: loginDigits.join("") })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.authenticated) {
+      const wait = Number(data.retryAfterMs || 0);
+      if (wait > 0) {
+        playLoginSound("error");
+        setLoginCooldown(wait, data.error || "暂时锁住了。");
+      } else {
+        playLoginSound("error");
+        setLoginStatus("×", "bad", data.error || "密码不对");
+        shakeLoginCard();
+        clearLoginDigits();
+        setLoginButtonsDisabled(false);
+      }
+      return;
+    }
+    await beginAuthenticatedSession(data);
+  } catch {
+    playLoginSound("error");
+    setLoginStatus("!", "bad", "本机服务还没有准备好");
+    shakeLoginCard();
+    clearLoginDigits();
+    setLoginButtonsDisabled(false);
+  } finally {
+    loginSubmitting = false;
+  }
+}
+
+function handleLoginDigit(digit) {
+  if (loginSubmitting || loginDigits.length >= 4) return;
+  const index = loginDigits.length;
+  playLoginSound("digit");
+  loginDigits.push(String(digit));
+  updateLoginStars();
+  triggerLoginStarBreak(index);
+  if (loginDigits.length === 4) submitLoginPin();
+}
+
+function installLoginGate() {
+  updateLoginStars();
+  $all("[data-login-digit]").forEach((button) => {
+    button.addEventListener("click", () => handleLoginDigit(button.dataset.loginDigit));
+  });
+  $all("[data-login-action='backspace']").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (loginSubmitting) return;
+      playLoginSound("backspace");
+      loginDigits.pop();
+      updateLoginStars();
+      setLoginStatus("", "", loginDigits.length ? "继续输入" : "等待输入");
+    });
+  });
+  window.addEventListener("keydown", (event) => {
+    if (!document.body.classList.contains("auth-locked")) return;
+    if (/^\d$/.test(event.key)) {
+      event.preventDefault();
+      handleLoginDigit(event.key);
+    } else if (event.key === "Backspace") {
+      event.preventDefault();
+      playLoginSound("backspace");
+      loginDigits.pop();
+      updateLoginStars();
+    }
+  });
+}
+
+async function checkAuthStatus() {
+  try {
+    const response = await fetch(apiUrl("/api/auth/status"), {
+      cache: "no-store",
+      credentials: "include"
+    });
+    const data = await response.json().catch(() => ({}));
+    if (response.ok && data.authenticated) {
+      await beginAuthenticatedSession(data, { animate: false });
+      return;
+    }
+    document.body.classList.add("auth-locked");
+    document.body.classList.remove("auth-checking");
+    loginElements().gate.hidden = false;
+    setLoginButtonsDisabled(false);
+    if (Number(data.retryAfterMs || 0) > 0) {
+      setLoginCooldown(Number(data.retryAfterMs), "暂时锁住了。");
+    } else {
+      setLoginStatus("", "", "等待输入");
+    }
+  } catch {
+    document.body.classList.add("auth-locked");
+    document.body.classList.remove("auth-checking");
+    if (loginElements().gate) loginElements().gate.hidden = false;
+    setLoginButtonsDisabled(true);
+    setLoginStatus("!", "bad", "本机服务未连接");
+  }
+}
+
+async function startApp() {
+  if (appBooted) return;
+  appBooted = true;
   await loadSharedState();
   $("#kanaScore").textContent = state.kanaScore;
   $("#playedCount").textContent = state.played;
@@ -39888,6 +40182,11 @@ async function init() {
   renderGallery({ persist: false });
   loadSharedGallery();
   renderCardCottage();
+}
+
+async function init() {
+  installLoginGate();
+  await checkAuthStatus();
 }
 
 init();
