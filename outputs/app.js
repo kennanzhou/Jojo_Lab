@@ -35251,7 +35251,6 @@ let wordProgressStorageTimer = null;
 let galleryPersistenceReady = false;
 let latestOssImageStorageStatus = null;
 let latestDeploymentStatus = null;
-let latestLocalOssConfigStatus = null;
 let armedHomeTileHref = "";
 let wordRepeatRecognizer = null;
 let pendingArtFile = null;
@@ -36983,85 +36982,6 @@ async function refreshDeploymentStatus() {
   }
 }
 
-function renderLocalOssConfigStatus(statusOverride = null) {
-  const summary = $("#ossLocalConfigSummary");
-  const list = $("#ossLocalConfigList");
-  const button = $("#importLocalOssSettings");
-  if (!summary || !list) return;
-  const status = statusOverride || latestLocalOssConfigStatus;
-  if (!status) {
-    summary.textContent = serverPersistenceAvailable ? "正在检查本机 Cynadu / Prism 配置..." : "本机共享服务未连接，无法检查。";
-    list.innerHTML = "";
-    if (button) button.disabled = true;
-    return;
-  }
-  summary.textContent = status.importable
-    ? `找到可导入的本机 OSS 配置：${status.preferred}。`
-    : "没有找到完整的本机 OSS 配置；可手动填写上方字段。";
-  list.innerHTML = (status.candidates || []).map((candidate) => {
-    const fields = candidate.fields || {};
-    const missing = [];
-    if (!fields.bucket) missing.push("Bucket");
-    if (!fields.region && !fields.endpoint) missing.push("Region/Endpoint");
-    if (!fields.accessKeyId) missing.push("AccessKey ID");
-    if (!fields.accessKeySecret) missing.push("AccessKey Secret");
-    const value = !candidate.exists
-      ? "未找到"
-      : candidate.complete
-        ? "可导入"
-        : `缺少 ${missing.join("、") || "必要字段"}`;
-    return `
-      <li class="${candidate.complete ? "is-clear" : ""}">
-        <span>${escapeHtml(candidate.label || "本机配置")}</span>
-        <b>${escapeHtml(value)}</b>
-      </li>
-    `;
-  }).join("");
-  if (button) button.disabled = !status.importable;
-}
-
-async function refreshLocalOssConfigStatus() {
-  if (!serverPersistenceAvailable) {
-    latestLocalOssConfigStatus = null;
-    renderLocalOssConfigStatus();
-    return null;
-  }
-  try {
-    const response = await fetch(apiUrl("/api/oss/local-configs"), { cache: "no-store" });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok || result.error) throw new Error(result.error || `本机 OSS 配置接口返回 ${response.status}`);
-    latestLocalOssConfigStatus = result;
-    renderLocalOssConfigStatus(result);
-    return result;
-  } catch {
-    latestLocalOssConfigStatus = null;
-    renderLocalOssConfigStatus();
-    return null;
-  }
-}
-
-async function importLocalOssSettings() {
-  try {
-    if (!serverPersistenceAvailable) throw new Error("本机服务未连接，无法导入 OSS 配置。");
-    setOssStatus("正在从本机 Cynadu / Prism 配置导入 OSS 设置...", "good");
-    const response = await fetch(apiUrl("/api/oss/import-local-config"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{}"
-    });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok || result.error) throw new Error(result.error || `本机 OSS 配置导入接口返回 ${response.status}`);
-    if (result.state) applySharedState(result.state);
-    latestLocalOssConfigStatus = result.status || latestLocalOssConfigStatus;
-    renderLocalOssConfigStatus();
-    fillOssSettingsForm();
-    setOssStatus(`已导入 ${result.source || "本机"} OSS 配置，正在测试图片存储...`, "good");
-    await runOssStorageCheck();
-  } catch (error) {
-    setOssStatus(`导入本机 OSS 配置失败：${error.message}`, "bad");
-  }
-}
-
 async function runOssStorageCheck() {
   try {
     if (!serverPersistenceAvailable) throw new Error("本机服务未连接，无法检查图片存储。");
@@ -37404,10 +37324,8 @@ function openSettings() {
   fillAiSettingsForm();
   fillOssSettingsForm();
   renderHomeBackgroundSettings();
-  renderLocalOssConfigStatus();
   renderDeploymentStatus();
   $("#settingsDialog").showModal();
-  refreshLocalOssConfigStatus();
   refreshDeploymentStatus();
 }
 
@@ -37772,10 +37690,19 @@ function setView() {
   const requestedId = currentViewId();
   const requestedView = document.getElementById(requestedId);
   const id = requestedView?.classList.contains("view") ? requestedId : "home";
+  const resetScroll = () => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  };
   $all(".view").forEach((view) => view.classList.toggle("active", view.id === id));
   moveActiveViewActionToTopbar(id);
   updateBrandAction();
   updateActiveSettingsButton();
+  resetScroll();
+  requestAnimationFrame(resetScroll);
+  setTimeout(resetScroll, 0);
+  setTimeout(resetScroll, 80);
 }
 
 function clearHomeTileSelection() {
@@ -40338,7 +40265,6 @@ function bindEvents() {
   $("#aiMode").addEventListener("change", syncEndpointForMode);
   $("#saveAiSettings").addEventListener("click", saveAiSettingsFromForm);
   $("#saveOssSettings").addEventListener("click", saveOssSettingsFromForm);
-  $("#importLocalOssSettings").addEventListener("click", importLocalOssSettings);
   $("#saveWordSettings").addEventListener("click", saveWordSettingsFromForm);
   $("#saveCardCottageTotal").addEventListener("click", saveCardCottageTotalFromForm);
   $("#cardCottageTotalInput").addEventListener("keydown", (event) => {

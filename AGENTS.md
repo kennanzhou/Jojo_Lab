@@ -41,6 +41,7 @@ Primary use cases:
 - iPad landscape is the main layout target. Verify around 1024x768 and the default browser viewport when changing major screens.
 - Each app should own its own settings interface. Do not put every setting into one global catch-all dialog.
 - The Home settings interface owns shared API configuration such as MiniMax keys/endpoints. App-specific learning controls belong inside that app's settings entry.
+- Home OSS settings should show only the OSS fields, save/status controls, and public deployment checks. Do not show a Cynadu/Prism local-config status panel or "导入本机 OSS" entry in the user-facing settings UI.
 - Keep app settings near the app title bar or inside that app's workflow, with large touch-friendly buttons.
 - App settings should use the unified top-right gear in the top bar. Do not add separate text settings buttons inside each module title area.
 - The unified settings gear must match the neighboring top-bar visual-mode button in size, border, radius, background, and shadow.
@@ -48,6 +49,7 @@ Primary use cases:
 - The home view may show a discreet app version number in the bottom-right corner of the poster; keep it small, low-contrast, and non-interactive.
 - The main top-bar brand should read horizontally as "JOJO LAB · PLAY HARD, THINK SHARP." after the logo. If using a handwritten slogan asset, keep it transparent and recolor it to the current slogan color rather than embedding a mismatched background.
 - On child app views, keep the unified top bar logo, replace the "JOJO LAB" wordmark with the active app name in the same uppercase wordmark style, and keep the "PLAY HARD, THINK SHARP." slogan visible in the top bar.
+- On child app views, keep the unified top bar visually comfortable and vertically centered; avoid making the bar feel pinned too high or overly compressed.
 - Child app section eyebrows and explanatory subtitles such as "English Songs" and "Jojo 喜欢的英文歌大模型精读" should not be shown inside the app surface; the unified top bar owns the app title.
 - Child app title-bar actions, such as Song Notes "逐句朗读", should move into the unified top bar and match the neighboring visual-mode/settings buttons in border, radius, background, size, and shadow.
 - Program surfaces should use solid paper-like backgrounds, not gradient backgrounds.
@@ -133,6 +135,7 @@ Primary use cases:
 - Keep unrevealed card faces clean: do not overlay letters, labels, or numbers on the card art.
 - If card-back source art contains unwanted text, remove or repair the text in the asset itself; do not hide it by top-cropping the image.
 - Card Cottage should show 4-6 cards per row depending on viewport width; avoid dense 8-card rows.
+- Card Cottage must adapt beyond the iPad layout: cap the board width and card size on large desktop screens, use responsive row/height rules for non-iPad screens, and avoid oversized cards, tiny squeezed cards, or horizontal scrolling.
 - The Card Cottage card grid should be vertically scrollable inside the card interface, rather than stretching the whole page, and it must not allow horizontal scrolling.
 - Card Cottage's title area should stay compact: show the real global big gold star as an icon with its count, plus a single revealed/total counter such as "0/50". Do not show label chips like "大金星", "已翻开", or "待翻开" in the top area.
 - Card Cottage settings must expose 50 front-image slots. Users should be able to upload, replace, delete, and drag-drop images into those slots with large, orderly controls.

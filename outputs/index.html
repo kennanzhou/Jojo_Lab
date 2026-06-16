@@ -6,7 +6,7 @@
     <title>Jojo LAB</title>
     <link rel="icon" type="image/svg+xml" href="./assets/jojo-logo.svg">
     <link rel="apple-touch-icon" href="./assets/jojo-logo.svg">
-    <link rel="stylesheet" href="./styles.css?v=20260616-v100">
+    <link rel="stylesheet" href="./styles.css?v=20260616-v105">
   </head>
   <body class="auth-locked auth-checking">
     <div class="app-shell">
@@ -557,13 +557,6 @@
             </label>
           </div>
           <p class="fine-print">建议 Bucket 或自定义域名可被公网读取；AccessKey 只保存在本机私有存档，不会写进 GitHub。</p>
-          <div class="oss-status-panel oss-local-config-panel" aria-labelledby="ossLocalConfigTitle">
-            <div>
-              <strong id="ossLocalConfigTitle">本机 Cynadu / Prism 配置</strong>
-              <p id="ossLocalConfigSummary" class="fine-print">正在检查是否可复用本机 OSS 配置。</p>
-            </div>
-            <ul id="ossLocalConfigList" class="oss-status-list"></ul>
-          </div>
           <div class="oss-status-panel deployment-status-panel" aria-labelledby="deploymentStatusTitle">
             <div>
               <strong id="deploymentStatusTitle">公网运行检查</strong>
@@ -573,7 +566,6 @@
           </div>
           <div id="ossSettingsStatus" class="feedback" role="status"></div>
           <div class="settings-actions">
-            <button class="ghost-btn" id="importLocalOssSettings" type="button">导入本机 OSS</button>
             <button class="primary-btn" id="saveOssSettings" type="button">保存 OSS 设置</button>
           </div>
         </section>
@@ -857,6 +849,6 @@
       </form>
     </dialog>
 
-    <script src="./app.js?v=20260616-v100"></script>
+    <script src="./app.js?v=20260616-v105"></script>
   </body>
 </html>

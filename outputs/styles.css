@@ -5789,8 +5789,8 @@ body.subprogram-active .view.active > .section-head {
 }
 
 #cardhouseSettingsDialog .settings-panel {
-  width: min(980px, calc(100vw - 34px));
-  max-width: min(980px, calc(100vw - 34px));
+  width: min(1180px, calc(100vw - 34px));
+  max-width: min(1180px, calc(100vw - 34px));
 }
 
 .card-settings-layout {
@@ -5877,7 +5877,7 @@ body.subprogram-active .view.active > .section-head {
 
 .card-slot-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 12px;
   max-height: min(52dvh, 540px);
   margin-top: 12px;
@@ -6075,11 +6075,22 @@ body.subprogram-active .view.active > .section-head {
   max-width: 720px;
 }
 
+#cardhouse {
+  --cardhouse-surface-width: 1360px;
+  --cardhouse-card-max: 190px;
+}
+
+#cardhouse .section-head,
+.cardhouse-board {
+  width: min(100%, var(--cardhouse-surface-width));
+  margin-inline: auto;
+}
+
 .cardhouse-board {
   display: grid;
   grid-template-rows: minmax(0, 1fr);
-  height: min(720px, calc(100dvh - 178px));
-  min-height: 500px;
+  height: clamp(500px, calc(100dvh - 178px), 860px);
+  min-height: 0;
   border: 2px solid rgba(201, 74, 46, 0.28);
   border-radius: 8px;
   background: #fff8df;
@@ -6133,6 +6144,7 @@ body.subprogram-active .view.active > .section-head {
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: clamp(14px, 1.8vw, 22px);
   align-items: start;
+  justify-items: center;
   width: 100%;
   max-width: 100%;
   min-height: 0;
@@ -6166,6 +6178,7 @@ body.subprogram-active .view.active > .section-head {
   position: relative;
   display: block;
   width: 100%;
+  max-width: var(--cardhouse-card-max);
   aspect-ratio: 2.5 / 3.5;
   border: 0;
   border-radius: 10px;
@@ -6187,7 +6200,7 @@ body.subprogram-active .view.active > .section-head {
 .reward-card::before {
   content: "";
   position: absolute;
-  inset: 7px -5px -7px 5px;
+  inset: 7px 0 -7px 5px;
   border-radius: 10px;
   background: #7b231f;
   border: 2px solid rgba(61, 23, 19, 0.45);
@@ -6301,11 +6314,38 @@ body.subprogram-active .view.active > .section-head {
   .cardhouse-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
+
+  .cardhouse-board {
+    height: clamp(420px, calc(100dvh - 150px), 680px);
+    padding: clamp(12px, 3.8vw, 18px);
+  }
 }
 
 @media (min-width: 761px) and (max-width: 1180px) {
+  #cardhouse {
+    --cardhouse-card-max: 174px;
+  }
+
   .cardhouse-grid {
     grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1500px) {
+  #cardhouse {
+    --cardhouse-surface-width: 1480px;
+    --cardhouse-card-max: 205px;
+  }
+}
+
+@media (max-width: 520px) {
+  #cardhouse {
+    --cardhouse-card-max: 128px;
+  }
+
+  .cardhouse-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
   }
 }
 
@@ -7268,6 +7308,98 @@ main,
   font-weight: 800;
   line-height: 1.2;
   pointer-events: none;
+}
+
+body.subprogram-active .topbar {
+  min-height: 78px !important;
+  padding-top: 14px !important;
+  padding-bottom: 10px !important;
+  align-items: center;
+}
+
+body.subprogram-active .brand,
+body.subprogram-active .topbar-module-actions,
+body.subprogram-active .topbar-actions {
+  transform: translateY(1px);
+}
+
+@media (max-height: 760px) and (min-width: 760px) {
+  body.subprogram-active .topbar {
+    min-height: 72px !important;
+    padding-top: 11px !important;
+    padding-bottom: 9px !important;
+  }
+}
+
+@media (max-width: 560px) {
+  body.subprogram-active .topbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 10px;
+    min-height: 76px !important;
+    padding-top: 12px !important;
+    padding-bottom: 10px !important;
+  }
+
+  body.subprogram-active .brand {
+    grid-column: 1;
+    grid-row: 1;
+    width: auto;
+    max-width: calc(100vw - 150px);
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  body.subprogram-active .brand-logo {
+    width: 42px;
+    height: 50px;
+    filter: drop-shadow(3px 4px 0 rgba(111, 51, 40, 0.22));
+  }
+
+  body.subprogram-active .brand-wordmark {
+    gap: 5px;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  body.subprogram-active .brand-wordmark strong {
+    overflow: hidden;
+    font-size: clamp(16px, 4.6vw, 20px);
+    text-overflow: ellipsis;
+  }
+
+  body.subprogram-active .brand-slogan-image {
+    width: clamp(62px, 17vw, 86px);
+    height: clamp(12px, 3.2vw, 17px);
+  }
+
+  body.subprogram-active .topbar-actions {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+    justify-self: end;
+  }
+
+  body.subprogram-active .topbar-module-actions {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+    justify-content: flex-start;
+    margin-left: 0;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  body.subprogram-active .topbar-module-actions .cardhouse-counter span {
+    min-height: 44px;
+    padding: 6px 10px;
+    font-size: 16px;
+  }
+
+  body.subprogram-active .topbar-module-actions .cardhouse-star-bank img {
+    width: 30px;
+    height: 30px;
+  }
 }
 
 @media (min-width: 760px) and (max-width: 1180px) {
