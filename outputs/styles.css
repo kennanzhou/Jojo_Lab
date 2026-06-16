@@ -50,6 +50,22 @@ button {
   cursor: pointer;
 }
 
+button,
+a[href],
+[role="button"],
+input,
+select,
+textarea,
+.module-tile,
+.reward-card,
+.art-card,
+.card-slot-drop,
+.sound-chip,
+.phonics-sound-card {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(201, 74, 46, 0.18);
+}
+
 .app-shell {
   min-height: 100vh;
 }

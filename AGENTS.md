@@ -31,6 +31,7 @@ Primary use cases:
 ## Touch Controls
 
 - Buttons, selects, inputs, and major tap targets should be at least 48px tall, preferably 50-56px on iPad.
+- Touch-first controls should feel immediate on iPad and phones. Use `touch-action: manipulation` for tappable controls and add explicit pointer/touch handling for custom critical controls instead of relying only on delayed synthetic clicks.
 - Do not make compact desktop-style 38-42px controls in learning views.
 - Important action buttons in learning workflows should use 18px text when space allows. If labels feel cramped, split actions into two rows instead of shrinking text.
 - Use icons where they improve recognition, but never at the cost of clarity for parent-child use.
@@ -68,6 +69,7 @@ Primary use cases:
 - The public app should open behind a cartoon, touch-friendly login layer that matches the retro storybook / learning-lab style.
 - While locked, keep the main app visible only as a blurred/frosted background and do not load private shared state, OSS signed URLs, song history, or progress data.
 - The login UI uses four Word Camp/Card Cottage big gold star images to represent the four entered digits, with large numeric buttons suitable for iPad use.
+- Login numeric buttons and backspace must work reliably by touch as well as mouse/keyboard; do not bind them with click-only handlers that can miss or double-fire on touch devices.
 - Do not show visible explanatory login text such as "星星密码", subtitles, or instructions. The login surface should be primarily visual.
 - When the user enters a digit, the corresponding big star should visibly break/shatter away and become the entered number.
 - Login digit entry should provide a short, gentle sound cue. Backspace, wrong PIN, and successful unlock should use distinct audio feedback.

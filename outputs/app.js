@@ -35478,6 +35478,41 @@ function $all(selector) {
   return Array.from(document.querySelectorAll(selector));
 }
 
+function bindTouchPress(element, handler) {
+  let suppressNextClick = false;
+  const run = (event) => {
+    if (element.disabled) return;
+    handler(event);
+  };
+  const suppressClickBriefly = () => {
+    suppressNextClick = true;
+    window.setTimeout(() => {
+      suppressNextClick = false;
+    }, 420);
+  };
+  if (window.PointerEvent) {
+    element.addEventListener("pointerdown", (event) => {
+      if (event.pointerType === "mouse" || event.isPrimary === false || event.button > 0) return;
+      event.preventDefault();
+      suppressClickBriefly();
+      run(event);
+    });
+  } else {
+    element.addEventListener("touchstart", (event) => {
+      event.preventDefault();
+      suppressClickBriefly();
+      run(event);
+    }, { passive: false });
+  }
+  element.addEventListener("click", (event) => {
+    if (suppressNextClick) {
+      event.preventDefault();
+      return;
+    }
+    run(event);
+  });
+}
+
 function shuffle(items) {
   return [...items].sort(() => Math.random() - 0.5);
 }
@@ -40628,10 +40663,10 @@ function handleLoginDigit(digit) {
 function installLoginGate() {
   updateLoginStars();
   $all("[data-login-digit]").forEach((button) => {
-    button.addEventListener("click", () => handleLoginDigit(button.dataset.loginDigit));
+    bindTouchPress(button, () => handleLoginDigit(button.dataset.loginDigit));
   });
   $all("[data-login-action='backspace']").forEach((button) => {
-    button.addEventListener("click", () => {
+    bindTouchPress(button, () => {
       if (loginSubmitting) return;
       playLoginSound("backspace");
       loginDigits.pop();
