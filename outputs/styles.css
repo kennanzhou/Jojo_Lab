@@ -5648,6 +5648,59 @@ body,
   gap: 12px;
 }
 
+.topbar-module-actions {
+  display: inline-flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.topbar-module-actions[hidden] {
+  display: none !important;
+}
+
+.topbar-module-actions .section-actions,
+.topbar-module-actions .cardhouse-counter {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.topbar-module-actions .primary-btn,
+.topbar-module-actions .ghost-btn {
+  min-height: 58px;
+  border: 2px solid var(--retro-red);
+  border-radius: var(--retro-radius);
+  background: var(--retro-paper-2);
+  color: var(--retro-red);
+  box-shadow: 5px 5px 0 rgba(111, 51, 40, 0.18);
+  padding: 10px 16px;
+  font-size: 18px;
+}
+
+.topbar-module-actions .primary-btn:hover,
+.topbar-module-actions .ghost-btn:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 7px 7px 0 rgba(111, 51, 40, 0.22);
+}
+
+body.subprogram-active .brand-separator,
+body.subprogram-active .brand-slogan-image {
+  display: none;
+}
+
+body.subprogram-active .view.active > .section-head {
+  display: none !important;
+}
+
 #cardhouseSettingsDialog .settings-panel {
   width: min(980px, calc(100vw - 34px));
   max-width: min(980px, calc(100vw - 34px));

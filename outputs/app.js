@@ -35264,6 +35264,7 @@ let loginCountdownTimer = null;
 const demoLocalStore = new Map();
 const selectedWordBankIds = new Set();
 const selectedSongBankIds = new Set();
+let activeTopbarAction = null;
 const maxProgressRows = 6;
 const minWordsPerBank = 10;
 const wordSmallStarsPerBig = 10;
@@ -37592,8 +37593,15 @@ function currentViewId() {
 
 function updateBrandAction() {
   const brand = $("#openSettings");
+  const viewId = currentViewId();
+  const activeView = document.getElementById(viewId)?.classList.contains("view") ? document.getElementById(viewId) : document.getElementById("home");
+  const title = activeView?.id === "home"
+    ? "JOJO LAB"
+    : (activeView?.querySelector("h2")?.textContent || "JOJO LAB").trim().toUpperCase();
+  $("#topbarTitle").textContent = title;
   brand.setAttribute("aria-label", "回到首页");
-  brand.classList.toggle("brand-home-action", currentViewId() !== "home");
+  brand.classList.toggle("brand-home-action", activeView?.id !== "home");
+  document.body.classList.toggle("subprogram-active", activeView?.id !== "home");
 }
 
 function updateActiveSettingsButton() {
@@ -37632,11 +37640,42 @@ function handleBrandClick() {
   location.hash = "home";
 }
 
+function restoreTopbarAction() {
+  if (!activeTopbarAction) return;
+  const { node, placeholder } = activeTopbarAction;
+  if (placeholder?.parentNode) placeholder.parentNode.insertBefore(node, placeholder);
+  placeholder?.remove();
+  node.classList.remove("is-in-topbar");
+  activeTopbarAction = null;
+}
+
+function moveActiveViewActionToTopbar(id) {
+  restoreTopbarAction();
+  const target = $("#topbarModuleActions");
+  if (!target || id === "home") {
+    if (target) target.hidden = true;
+    return;
+  }
+  const view = document.getElementById(id);
+  const actionNode = view?.querySelector(".section-head .section-actions, .section-head .cardhouse-counter");
+  if (!actionNode) {
+    target.hidden = true;
+    return;
+  }
+  const placeholder = document.createComment(`topbar-action:${id}`);
+  actionNode.parentNode.insertBefore(placeholder, actionNode);
+  actionNode.classList.add("is-in-topbar");
+  target.appendChild(actionNode);
+  target.hidden = false;
+  activeTopbarAction = { node: actionNode, placeholder };
+}
+
 function setView() {
   const requestedId = currentViewId();
   const requestedView = document.getElementById(requestedId);
   const id = requestedView?.classList.contains("view") ? requestedId : "home";
   $all(".view").forEach((view) => view.classList.toggle("active", view.id === id));
+  moveActiveViewActionToTopbar(id);
   updateBrandAction();
   updateActiveSettingsButton();
 }
