@@ -35446,6 +35446,7 @@ const state = {
   dailyWordCount: normalizeDailyWordCount(localStorage.getItem("jojoDailyWordCount") || 20),
   dailyWordPlan: loadDailyWordPlan(),
   wordProgress: loadWordProgress(),
+  globalRewards: loadGlobalRewards(),
   wordRewards: loadWordRewards(),
   customWordBanks: loadCustomWordBanks(),
   deletedWordBanks: JSON.parse(localStorage.getItem("jojoDeletedWordBanks") || "[]"),
@@ -35734,16 +35735,69 @@ function persistWordProgress(changedKey = "") {
   }
 }
 
-function loadWordRewards() {
-  const fallback = { smallStars: 0, bigStars: 0 };
+function readLocalJson(key, fallback = {}) {
   try {
-    return { ...fallback, ...JSON.parse(localStorage.getItem("jojoWordRewards") || "{}") };
+    const value = JSON.parse(localStorage.getItem(key) || "null");
+    return value && typeof value === "object" ? value : fallback;
   } catch {
     return fallback;
   }
 }
 
+function rewardNumber(value) {
+  return Math.max(0, Number(value || 0));
+}
+
+function legacyModuleBigStars(...items) {
+  return items.reduce((total, item) => total + rewardNumber(item?.bigStars), 0);
+}
+
+function normalizeGlobalRewards(value = {}, legacyBigStars = 0) {
+  value = value && typeof value === "object" ? value : {};
+  const rewards = {
+    bigStars: rewardNumber(value.bigStars),
+    migratedModuleBigStars: Boolean(value.migratedModuleBigStars)
+  };
+  if (!rewards.migratedModuleBigStars) {
+    rewards.bigStars += rewardNumber(legacyBigStars);
+    rewards.migratedModuleBigStars = true;
+  }
+  return rewards;
+}
+
+function loadGlobalRewards() {
+  const stored = readLocalJson("jojoGlobalRewards", {});
+  const legacyBigStars = legacyModuleBigStars(
+    readLocalJson("jojoWordRewards", {}),
+    readLocalJson("jojoKanaRewards", {}),
+    readLocalJson("jojoPhonicsRewards", {})
+  );
+  return normalizeGlobalRewards(stored, legacyBigStars);
+}
+
+function persistGlobalRewards() {
+  state.globalRewards = normalizeGlobalRewards(state.globalRewards, 0);
+  saveLocalItem("jojoGlobalRewards", JSON.stringify(state.globalRewards));
+  saveSharedState({ globalRewards: state.globalRewards });
+}
+
+function normalizeWordRewards(value = {}) {
+  return {
+    smallStars: rewardNumber(value.smallStars),
+    bigStars: 0
+  };
+}
+
+function loadWordRewards() {
+  try {
+    return normalizeWordRewards(JSON.parse(localStorage.getItem("jojoWordRewards") || "{}"));
+  } catch {
+    return normalizeWordRewards();
+  }
+}
+
 function persistWordRewards() {
+  state.wordRewards = normalizeWordRewards(state.wordRewards);
   saveLocalItem("jojoWordRewards", JSON.stringify(state.wordRewards));
   saveSharedState({ wordRewards: state.wordRewards });
 }
@@ -35798,8 +35852,8 @@ function persistKanaProgress() {
 
 function normalizeKanaRewards(value = {}) {
   return {
-    smallStars: Math.max(0, Number(value.smallStars || 0)),
-    bigStars: Math.max(0, Number(value.bigStars || 0)),
+    smallStars: rewardNumber(value.smallStars),
+    bigStars: 0,
     masteryCredits: Math.max(0, Math.min(kanaMasteriesPerSmallStar - 1, Number(value.masteryCredits || 0))),
     awardedKeys: Array.isArray(value.awardedKeys) ? value.awardedKeys.map(String) : []
   };
@@ -35930,45 +35984,70 @@ function dailyWords() {
   return wordsForSelectedBank().filter((word) => planSet.has(word.word));
 }
 
+function globalBigStars() {
+  return rewardNumber(state.globalRewards?.bigStars);
+}
+
+function renderBigStarTray(selector) {
+  const tray = $(selector);
+  if (!tray) return;
+  const bigStars = globalBigStars();
+  const visibleBigStars = Math.min(bigStars, 4);
+  tray.innerHTML = bigStars
+    ? `${Array.from({ length: visibleBigStars }, () => `<img src="./assets/gold-star-reward.png" alt="大星星">`).join("")}${bigStars > visibleBigStars ? `<span class="star-more">+${bigStars - visibleBigStars}</span>` : ""}`
+    : "";
+  tray.setAttribute("aria-label", `全局大星星 ${bigStars} 颗`);
+}
+
+function renderGlobalRewards() {
+  ["#wordBigStarTray", "#kanaBigStarTray", "#phonicsBigStarTray"].forEach(renderBigStarTray);
+  const bigStars = globalBigStars();
+  if ($("#cardhouseBigStarCount")) $("#cardhouseBigStarCount").textContent = String(bigStars);
+  if ($(".cardhouse-star-bank")) $(".cardhouse-star-bank").setAttribute("aria-label", `当前全局大金星 ${bigStars} 颗`);
+}
+
 function renderStarRewards(rewards, smallTraySelector, bigTraySelector, smallStarsPerBig) {
   const smallTray = $(smallTraySelector);
   const bigTray = $(bigTraySelector);
   if (!smallTray || !bigTray) return;
   const smallStars = Math.max(0, Math.min(smallStarsPerBig - 1, Number(rewards?.smallStars || 0)));
-  const bigStars = Math.max(0, Number(rewards?.bigStars || 0));
   smallTray.innerHTML = `${Array.from({ length: smallStars }, () => `
     <img src="./assets/gold-star-reward-small.png" alt="小星星">
   `).join("")}<span class="star-progress-text">${smallStars}/${smallStarsPerBig}</span>`;
-  const visibleBigStars = Math.min(bigStars, 4);
-  bigTray.innerHTML = bigStars
-    ? `${Array.from({ length: visibleBigStars }, () => `<img src="./assets/gold-star-reward.png" alt="大星星">`).join("")}${bigStars > visibleBigStars ? `<span class="star-more">+${bigStars - visibleBigStars}</span>` : ""}`
-    : "";
+  renderBigStarTray(bigTraySelector);
 }
 
 function renderWordRewards() {
-  state.wordRewards = { smallStars: 0, bigStars: 0, ...state.wordRewards };
+  state.wordRewards = normalizeWordRewards(state.wordRewards);
   renderStarRewards(state.wordRewards, "#wordSmallStarTray", "#wordBigStarTray", wordSmallStarsPerBig);
-  const bigStars = Math.max(0, Number(state.wordRewards?.bigStars || 0));
-  if ($("#cardhouseBigStarCount")) $("#cardhouseBigStarCount").textContent = String(bigStars);
+  renderGlobalRewards();
 }
 
 function renderKanaRewards() {
   state.kanaRewards = normalizeKanaRewards(state.kanaRewards);
   renderStarRewards(state.kanaRewards, "#kanaSmallStarTray", "#kanaBigStarTray", kanaSmallStarsPerBig);
+  renderGlobalRewards();
 }
 
 function renderPhonicsRewards() {
   state.phonicsRewards = normalizePhonicsRewards(state.phonicsRewards);
   renderStarRewards(state.phonicsRewards, "#phonicsSmallStarTray", "#phonicsBigStarTray", phonicsSmallStarsPerBig);
+  renderGlobalRewards();
+}
+
+function addGlobalBigStars(amount = 1) {
+  state.globalRewards = normalizeGlobalRewards(state.globalRewards, 0);
+  state.globalRewards.bigStars += rewardNumber(amount);
+  state.globalRewards.migratedModuleBigStars = true;
 }
 
 function awardSmallStars(rewards, amount, smallStarsPerBig) {
   rewards.smallStars = Math.max(0, Number(rewards.smallStars || 0)) + amount;
-  rewards.bigStars = Math.max(0, Number(rewards.bigStars || 0));
+  rewards.bigStars = 0;
   let earned = amount > 0 ? "small" : "";
   while (rewards.smallStars >= smallStarsPerBig) {
     rewards.smallStars -= smallStarsPerBig;
-    rewards.bigStars += 1;
+    addGlobalBigStars(1);
     earned = "big";
   }
   return earned;
@@ -36009,13 +36088,14 @@ function animatePhonicsStarReward(type) {
 }
 
 function awardWordMasteryReward() {
-  state.wordRewards = { smallStars: 0, bigStars: 0, ...state.wordRewards };
+  state.wordRewards = normalizeWordRewards(state.wordRewards);
   const earned = awardSmallStars(state.wordRewards, 1, wordSmallStarsPerBig);
   persistWordRewards();
+  if (earned === "big") persistGlobalRewards();
   renderWordRewards();
   playStarCue(earned);
   animateWordStarReward(earned);
-  showToast(earned === "big" ? "10 颗小星合成 1 颗大星！" : "单词达到 3 分，获得 1 颗小星！", "good");
+  showToast(earned === "big" ? "10 颗 Word Camp 小星合成 1 颗全局大星！" : "单词达到 3 分，获得 1 颗 Word Camp 小星！", "good");
 }
 
 function awardKanaMasteryReward(progressKey) {
@@ -36029,11 +36109,12 @@ function awardKanaMasteryReward(progressKey) {
     earned = awardSmallStars(state.kanaRewards, 1, kanaSmallStarsPerBig);
   }
   persistKanaRewards();
+  if (earned === "big") persistGlobalRewards();
   renderKanaRewards();
   if (earned) {
     playStarCue(earned);
     animateKanaStarReward(earned);
-    showToast(earned === "big" ? "Kana 12 颗小星合成 1 颗大星！" : "新掌握 2 个假名，获得 1 颗小星！", "good");
+    showToast(earned === "big" ? "Kana 12 颗小星合成 1 颗全局大星！" : "新掌握 2 个假名，获得 1 颗 Kana 小星！", "good");
   } else {
     showToast("新掌握 1 个假名，再掌握 1 个换小星。", "good");
   }
@@ -36045,10 +36126,11 @@ function awardPhonicsChallengeReward(unitIndex) {
   state.phonicsRewards.awardedUnits.push(unitIndex);
   const earned = awardSmallStars(state.phonicsRewards, phonicsSmallStarsPerChallenge, phonicsSmallStarsPerBig);
   persistPhonicsRewards();
+  if (earned === "big") persistGlobalRewards();
   renderPhonicsRewards();
   playStarCue(earned);
   animatePhonicsStarReward(earned);
-  showToast(earned === "big" ? "Phonics 6 颗小星合成 1 颗大星！" : "完成单元挑战，获得 2 颗小星！", "good");
+  showToast(earned === "big" ? "Phonics 6 颗小星合成 1 颗全局大星！" : "完成单元挑战，获得 2 颗 Phonics 小星！", "good");
 }
 
 
@@ -37362,8 +37444,19 @@ function openActiveViewSettings() {
   openModuleDialog(dialogByView[viewId] || "settingsDialog");
 }
 
+function applyIncomingRewardMigration(data) {
+  const hasRewardData = data.globalRewards || data.wordRewards || data.kanaRewards || data.phonicsRewards;
+  if (!hasRewardData) return;
+  state.globalRewards = normalizeGlobalRewards(
+    data.globalRewards || state.globalRewards,
+    legacyModuleBigStars(data.wordRewards, data.kanaRewards, data.phonicsRewards)
+  );
+  saveLocalItem("jojoGlobalRewards", JSON.stringify(state.globalRewards));
+}
+
 function applySharedState(data) {
   if (!data || typeof data !== "object") return;
+  applyIncomingRewardMigration(data);
   if (data.wordProgressPatch && typeof data.wordProgressPatch === "object") {
     state.wordProgress = { ...state.wordProgress, ...data.wordProgressPatch };
   }
@@ -37406,7 +37499,7 @@ function applySharedState(data) {
     }
   }
   if (data.wordRewards) {
-    state.wordRewards = { smallStars: 0, bigStars: 0, ...data.wordRewards };
+    state.wordRewards = normalizeWordRewards(data.wordRewards);
     saveLocalItem("jojoWordRewards", JSON.stringify(state.wordRewards));
   }
   if (typeof data.artMode === "boolean") {
@@ -37468,6 +37561,11 @@ function applySharedState(data) {
   if (data.cardCottage && typeof data.cardCottage === "object") {
     state.cardCottage = normalizeCardCottageState(data.cardCottage);
     saveLocalItem("jojoCardCottage", JSON.stringify(state.cardCottage));
+  }
+  if (data.globalRewards || data.wordRewards || data.kanaRewards || data.phonicsRewards) {
+    renderWordRewards();
+    renderKanaRewards();
+    renderPhonicsRewards();
   }
 }
 
@@ -37968,11 +38066,11 @@ function resetCurrentWordBank() {
 }
 
 function resetWordStars() {
-  if (!window.confirm("确认复位 Word Camp 星星吗？\n这个操作只清空小星和大星，不会影响词库学习进度。")) return;
+  if (!window.confirm("确认复位 Word Camp 小星吗？\n这个操作只清空 Word Camp 的小星进度，不会影响全局大星和词库学习进度。")) return;
   state.wordRewards = { smallStars: 0, bigStars: 0 };
   persistWordRewards();
   renderWordRewards();
-  showToast("Word Camp 星星已复位", "good");
+  showToast("Word Camp 小星已复位", "good");
 }
 
 function deleteCurrentWordBank() {
@@ -38269,8 +38367,8 @@ function loadPhonicsQuestState() {
 
 function normalizePhonicsRewards(value = {}) {
   return {
-    smallStars: Math.max(0, Number(value.smallStars || 0)),
-    bigStars: Math.max(0, Number(value.bigStars || 0)),
+    smallStars: rewardNumber(value.smallStars),
+    bigStars: 0,
     awardedUnits: Array.isArray(value.awardedUnits) ? value.awardedUnits.map(Number).filter(Number.isFinite) : []
   };
 }
@@ -39910,9 +40008,9 @@ function updateCardCottageSummary() {
   const totalCards = currentCardCottageTotal();
   const revealedCount = Math.max(0, Math.min(totalCards, state.cardCottage.revealed.length));
   const remainingCount = Math.max(0, totalCards - revealedCount);
-  const bigStars = Math.max(0, Number(state.wordRewards?.bigStars || 0));
+  const bigStars = globalBigStars();
   if ($("#cardhouseBigStarCount")) $("#cardhouseBigStarCount").textContent = String(bigStars);
-  if ($(".cardhouse-star-bank")) $(".cardhouse-star-bank").setAttribute("aria-label", `当前大金星 ${bigStars} 颗`);
+  if ($(".cardhouse-star-bank")) $(".cardhouse-star-bank").setAttribute("aria-label", `当前全局大金星 ${bigStars} 颗`);
   if ($("#cardhouseProgressCount")) $("#cardhouseProgressCount").textContent = `${revealedCount}/${totalCards}`;
   if ($(".cardhouse-progress-pill")) $(".cardhouse-progress-pill").setAttribute("aria-label", `已翻开 ${revealedCount} / ${totalCards}`);
   if ($("#cardhouseBoard")) $("#cardhouseBoard").setAttribute("aria-label", `${totalCards} 张奖励卡`);
@@ -39968,19 +40066,16 @@ function closeCardPreview() {
 }
 
 function spendCardCottageBigStar() {
-  state.wordRewards = {
-    smallStars: Math.max(0, Number(state.wordRewards?.smallStars || 0)),
-    bigStars: Math.max(0, Number(state.wordRewards?.bigStars || 0))
-  };
-  if (state.wordRewards.bigStars < 1) {
+  state.globalRewards = normalizeGlobalRewards(state.globalRewards, 0);
+  if (state.globalRewards.bigStars < 1) {
     playCue("bad");
-    showToast("需要 1 颗大金星才能翻开奖励卡。先去 Word Camp 攒大金星！", "bad");
+    showToast("需要 1 颗全局大金星才能翻开奖励卡。先去任意练习里攒大星！", "bad");
     updateCardCottageSummary();
     return false;
   }
-  state.wordRewards.bigStars -= 1;
-  persistWordRewards();
-  renderWordRewards();
+  state.globalRewards.bigStars -= 1;
+  persistGlobalRewards();
+  renderGlobalRewards();
   updateCardCottageSummary();
   return true;
 }
@@ -40671,6 +40766,7 @@ async function startApp() {
   renderKanaRewards();
   renderWordRewards();
   renderPhonicsRewards();
+  renderGlobalRewards();
   $("#artDate").valueAsDate = new Date();
   installCustomWordBankLabels();
   syncWordBankSelect();

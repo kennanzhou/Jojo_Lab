@@ -45,6 +45,7 @@ const mimeTypes = {
 const defaultState = {
   wordProgress: {},
   wordRewards: { smallStars: 0, bigStars: 0 },
+  globalRewards: { bigStars: 0, migratedModuleBigStars: false },
   wordBank: "ket-official",
   dailyWordCount: 20,
   dailyWordPlan: null,
@@ -92,6 +93,70 @@ function ensureCardAssetDir() {
   fs.mkdirSync(cardAssetDir, { recursive: true, mode: 0o700 });
 }
 
+function rewardNumber(value) {
+  return Math.max(0, Number(value || 0));
+}
+
+function normalizeWordRewards(value = {}) {
+  return {
+    ...defaultState.wordRewards,
+    ...value,
+    smallStars: rewardNumber(value.smallStars),
+    bigStars: 0
+  };
+}
+
+function normalizeKanaRewards(value = {}) {
+  return {
+    ...defaultState.kanaRewards,
+    ...value,
+    smallStars: rewardNumber(value.smallStars),
+    bigStars: 0,
+    masteryCredits: rewardNumber(value.masteryCredits),
+    awardedKeys: Array.isArray(value.awardedKeys) ? value.awardedKeys.map(String) : []
+  };
+}
+
+function normalizePhonicsRewards(value = {}) {
+  return {
+    ...defaultState.phonicsRewards,
+    ...value,
+    smallStars: rewardNumber(value.smallStars),
+    bigStars: 0,
+    awardedUnits: Array.isArray(value.awardedUnits) ? value.awardedUnits.map(Number).filter(Number.isFinite) : []
+  };
+}
+
+function legacyModuleBigStars(state) {
+  return ["wordRewards", "kanaRewards", "phonicsRewards"].reduce((total, key) => {
+    return total + rewardNumber(state?.[key]?.bigStars);
+  }, 0);
+}
+
+function normalizeGlobalRewards(value = {}, legacyBigStars = 0) {
+  const rewards = {
+    ...defaultState.globalRewards,
+    ...value,
+    bigStars: rewardNumber(value.bigStars),
+    migratedModuleBigStars: Boolean(value.migratedModuleBigStars)
+  };
+  if (!rewards.migratedModuleBigStars) {
+    rewards.bigStars += rewardNumber(legacyBigStars);
+    rewards.migratedModuleBigStars = true;
+  }
+  return rewards;
+}
+
+function normalizeRewardState(state) {
+  const legacyBigStars = legacyModuleBigStars(state);
+  const wasMigrated = Boolean(state.globalRewards?.migratedModuleBigStars);
+  state.globalRewards = normalizeGlobalRewards(state.globalRewards || {}, legacyBigStars);
+  state.wordRewards = normalizeWordRewards(state.wordRewards || {});
+  state.kanaRewards = normalizeKanaRewards(state.kanaRewards || {});
+  state.phonicsRewards = normalizePhonicsRewards(state.phonicsRewards || {});
+  return !wasMigrated || legacyBigStars > 0;
+}
+
 function readState() {
   ensureDataDir();
   try {
@@ -100,13 +165,12 @@ function readState() {
     if (state.wordBank !== "all" && state.wordBank !== "ket-official" && !customBankIds.has(state.wordBank)) {
       state.wordBank = "ket-official";
     }
-    state.wordRewards = { ...defaultState.wordRewards, ...(state.wordRewards || {}) };
-    state.kanaRewards = { ...defaultState.kanaRewards, ...(state.kanaRewards || {}) };
-    state.phonicsRewards = { ...defaultState.phonicsRewards, ...(state.phonicsRewards || {}) };
+    const rewardStateChanged = normalizeRewardState(state);
     state.aiSettings = { ...defaultState.aiSettings, ...(state.aiSettings || {}), model: "MiniMax-M3", customModel: "" };
     state.ossSettings = { ...defaultState.ossSettings, ...(state.ossSettings || {}) };
     state.homeBackground = { ...defaultState.homeBackground, ...(state.homeBackground || {}) };
     state.homeBackgroundPresets = Array.isArray(state.homeBackgroundPresets) ? state.homeBackgroundPresets : [];
+    if (rewardStateChanged) writeState(state);
     return state;
   } catch {
     return { ...defaultState };
@@ -163,7 +227,7 @@ function applyStatePatch(current, patch) {
       }
     });
   }
-  ["wordProgress", "wordRewards", "dailyWordPlan", "gallery", "deletedWordBanks", "customWordBanks", "songHistory", "kanaProgress", "kanaRewards", "phonicsQuest", "phonicsRewards", "cardCottage", "appSettings", "homeBackground", "homeBackgroundPresets"].forEach((key) => {
+  ["wordProgress", "wordRewards", "globalRewards", "dailyWordPlan", "gallery", "deletedWordBanks", "customWordBanks", "songHistory", "kanaProgress", "kanaRewards", "phonicsQuest", "phonicsRewards", "cardCottage", "appSettings", "homeBackground", "homeBackgroundPresets"].forEach((key) => {
     if (key in patch) next[key] = patch[key];
   });
   ["wordBank", "dailyWordCount", "kanaScore", "played", "artMode"].forEach((key) => {
@@ -200,6 +264,7 @@ function applyStatePatch(current, patch) {
     delete next.ossSettings.clearAccessKeyId;
     delete next.ossSettings.clearAccessKeySecret;
   }
+  normalizeRewardState(next);
   return next;
 }
 
@@ -362,7 +427,8 @@ function cloneState(state) {
 
 function createDemoState() {
   const state = cloneState(readState());
-  state.wordRewards = { smallStars: 0, bigStars: 6 };
+  state.wordRewards = { smallStars: 0, bigStars: 0 };
+  state.globalRewards = { bigStars: 6, migratedModuleBigStars: true };
   return state;
 }
 
