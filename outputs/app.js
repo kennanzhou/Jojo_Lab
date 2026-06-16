@@ -35197,6 +35197,33 @@ const defaultAppSettings = {
   wordRepeatVoEnabled: false
 };
 
+const defaultOssSettings = {
+  provider: "aliyun",
+  region: "",
+  endpoint: "",
+  bucket: "",
+  accessKeyId: "",
+  accessKeySecret: "",
+  customDomain: "",
+  prefix: "jojo-site",
+  useSsl: true,
+  hasAccessKeyId: false,
+  hasAccessKeySecret: false
+};
+
+const homeBackgroundPresets = [
+  { id: "robot-cheer", label: "机器人小巴", src: "./assets/jojo-retro-hero-robot-cheer.png" },
+  { id: "storybook", label: "故事小巴", src: "./assets/jojo-retro-hero-with-jojo.png" },
+  { id: "ukulele", label: "尤克里里", src: "./assets/jojo-retro-hero-cartoon-ukulele.png" },
+  { id: "classic", label: "经典实验室", src: "./assets/jojo-retro-hero.png" }
+];
+
+const defaultHomeBackground = {
+  mode: "preset",
+  preset: "robot-cheer",
+  src: homeBackgroundPresets[0].src
+};
+
 const cardCottagePhotoSources = Array.from({ length: 19 }, (_, index) => `./assets/card-cottage/fronts/jojo-front-${String(index + 1).padStart(2, "0")}.jpg`);
 const cardCottageFrameSrc = "./assets/card-cottage/gold-frame.png";
 const cardCottageDefaultTotal = 50;
@@ -35220,6 +35247,10 @@ let serverPersistenceAvailable = false;
 let syncTimer = null;
 let pendingSharedPatch = null;
 let wordProgressStorageTimer = null;
+let galleryPersistenceReady = false;
+let latestOssImageStorageStatus = null;
+let latestDeploymentStatus = null;
+let latestLocalOssConfigStatus = null;
 let armedHomeTileHref = "";
 let wordRepeatRecognizer = null;
 let pendingArtFile = null;
@@ -35395,6 +35426,9 @@ const state = {
   cardCottage: loadCardCottageState(),
   appSettings: loadAppSettings(),
   aiSettings: loadAiSettings(),
+  ossSettings: loadOssSettings(),
+  homeBackground: loadHomeBackground(),
+  homeBackgroundPresets: loadHomeBackgroundPresets(),
   songCandidates: [],
   selectedSong: null,
   songAnalysis: null,
@@ -36057,7 +36091,11 @@ function normalizeCardCottageSlots(slots = []) {
     return {
       name: String(slot.name || `Card ${index + 1}`),
       src: String(slot.src),
-      updatedAt: slot.updatedAt || ""
+      updatedAt: slot.updatedAt || "",
+      objectKey: slot.objectKey ? String(slot.objectKey) : "",
+      storage: slot.storage ? String(slot.storage) : "",
+      mime: slot.mime ? String(slot.mime) : "",
+      size: Number(slot.size || 0) || 0
     };
   });
   return normalized;
@@ -36121,6 +36159,7 @@ function loadCardCottageState() {
 function saveCardCottageState() {
   localStorage.setItem("jojoCardCottage", JSON.stringify(state.cardCottage));
   saveSharedState({ cardCottage: state.cardCottage });
+  invalidateOssImageStorageStatus();
 }
 
 function saveSongHistory() {
@@ -36356,6 +36395,501 @@ function loadAiSettings() {
   }
 }
 
+function loadOssSettings() {
+  try {
+    const stored = JSON.parse(localStorage.getItem("jojoOssSettings") || "{}");
+    delete stored.accessKeyId;
+    delete stored.accessKeySecret;
+    return { ...defaultOssSettings, ...stored, accessKeyId: "", accessKeySecret: "" };
+  } catch {
+    return { ...defaultOssSettings };
+  }
+}
+
+function loadHomeBackground() {
+  try {
+    return { ...defaultHomeBackground, ...JSON.parse(localStorage.getItem("jojoHomeBackground") || "{}") };
+  } catch {
+    return { ...defaultHomeBackground };
+  }
+}
+
+function normalizeHomeBackgroundPresets(presets = []) {
+  const byId = new Map(Array.isArray(presets) ? presets.map((item) => [item?.id, item]) : []);
+  return homeBackgroundPresets.map((fallback) => {
+    const saved = byId.get(fallback.id) || {};
+    return {
+      ...fallback,
+      src: saved.src || fallback.src,
+      objectKey: saved.objectKey || "",
+      storage: saved.storage || (saved.objectKey ? "oss" : "built-in"),
+      updatedAt: saved.updatedAt || ""
+    };
+  });
+}
+
+function loadHomeBackgroundPresets() {
+  try {
+    return normalizeHomeBackgroundPresets(JSON.parse(localStorage.getItem("jojoHomeBackgroundPresets") || "[]"));
+  } catch {
+    return normalizeHomeBackgroundPresets();
+  }
+}
+
+function storeOssSettingsPublic(settings) {
+  state.ossSettings = { ...defaultOssSettings, ...state.ossSettings, ...settings, accessKeyId: "", accessKeySecret: "" };
+  localStorage.setItem("jojoOssSettings", JSON.stringify({
+    provider: state.ossSettings.provider,
+    region: state.ossSettings.region,
+    endpoint: state.ossSettings.endpoint,
+    bucket: state.ossSettings.bucket,
+    customDomain: state.ossSettings.customDomain,
+    prefix: state.ossSettings.prefix,
+    useSsl: state.ossSettings.useSsl !== false,
+    hasAccessKeyId: Boolean(state.ossSettings.hasAccessKeyId),
+    hasAccessKeySecret: Boolean(state.ossSettings.hasAccessKeySecret)
+  }));
+}
+
+function ossUploadReady() {
+  const settings = state.ossSettings || {};
+  return Boolean(
+    serverPersistenceAvailable
+    && settings.bucket
+    && (settings.endpoint || settings.region)
+    && settings.hasAccessKeyId
+    && settings.hasAccessKeySecret
+  );
+}
+
+function ossUploadBlockerMessage() {
+  const settings = state.ossSettings || {};
+  if (!serverPersistenceAvailable) return "本机共享服务未连接，无法上传到 OSS。";
+  if (!settings.bucket) return "请先在主页齿轮填写 OSS Bucket。";
+  if (!settings.endpoint && !settings.region) return "请先填写 OSS Endpoint 或 Region。";
+  if (!settings.hasAccessKeyId || !settings.hasAccessKeySecret) return "请先保存 OSS AccessKey ID 和 AccessKey Secret。";
+  return "OSS 配置尚未准备好。";
+}
+
+function assertOssUploadReady() {
+  if (!ossUploadReady()) throw new Error(`${ossUploadBlockerMessage()} 图片不会保存到本机或服务器目录。`);
+}
+
+function setOssStatus(message, tone = "") {
+  const status = $("#ossSettingsStatus");
+  if (!status) return;
+  status.textContent = message;
+  status.className = `feedback ${tone}`.trim();
+}
+
+function ossImageStorageStatus() {
+  const presets = normalizeHomeBackgroundPresets(state.homeBackgroundPresets);
+  const presetPending = presets.filter((preset) => preset.storage !== "oss" || !preset.objectKey).length;
+  const galleryItems = Array.isArray(state.gallery) ? state.gallery : [];
+  const galleryPending = galleryItems.filter((art) => imageSourceNeedsOss(art.image)).length;
+  const cardSlots = normalizeCardCottageSlots(state.cardCottage?.slots).filter((slot) => slot?.src);
+  const cardPending = cardSlots.filter((slot) => imageSourceNeedsOss(slot.src)).length;
+  const customBackgroundPending = state.homeBackground?.mode === "custom" && imageSourceNeedsOss(state.homeBackground.src) ? 1 : 0;
+  const pending = presetPending + galleryPending + cardPending + customBackgroundPending;
+  return {
+    pending,
+    presetPending,
+    presetTotal: presets.length,
+    galleryPending,
+    galleryTotal: galleryItems.length,
+    cardPending,
+    cardTotal: cardSlots.length,
+    customBackgroundPending,
+    customBackgroundTotal: state.homeBackground?.mode === "custom" ? 1 : 0
+  };
+}
+
+function invalidateOssImageStorageStatus() {
+  latestOssImageStorageStatus = null;
+  latestDeploymentStatus = null;
+  renderDeploymentStatus();
+}
+
+function renderDeploymentStatus(statusOverride = null) {
+  const list = $("#deploymentStatusList");
+  const summary = $("#deploymentStatusSummary");
+  if (!list || !summary) return;
+  const status = statusOverride || latestDeploymentStatus;
+  if (!status) {
+    summary.textContent = serverPersistenceAvailable ? "正在检查公网运行状态..." : "本机共享服务未连接。";
+    list.innerHTML = "";
+    return;
+  }
+  const rows = [
+    ["共享状态", status.state?.privateStateFile ? "已连接" : "待初始化", Boolean(status.state?.privateStateFile)],
+    ["Song Notes", `${status.state?.songHistoryCount || 0} 首历史可恢复`, true],
+    ["OSS", status.oss?.configured ? "配置完整" : "待配置", Boolean(status.oss?.configured)],
+    ["新图片上传", status.oss?.uploadsReady || status.oss?.configured ? "保存到 OSS" : "待 OSS 配置", Boolean(status.oss?.uploadsReady || status.oss?.configured)],
+    ["图片存储", status.migration?.pending ? `${status.migration.pending} 项待同步` : "已就绪", !status.migration?.pending]
+  ];
+  summary.textContent = status.internetReady
+    ? "当前状态已满足公网运行的图片存储要求。"
+    : status.migration?.pending
+      ? `还有 ${status.migration.pending} 项图片需要同步到 OSS。`
+      : (status.issues || []).join(" ") || "还有公网运行检查项需要处理。";
+  list.innerHTML = rows.map(([label, value, clear]) => `
+    <li class="${clear ? "is-clear" : ""}">
+      <span>${escapeHtml(label)}</span>
+      <b>${escapeHtml(value)}</b>
+    </li>
+  `).join("");
+}
+
+async function refreshDeploymentStatus() {
+  if (!serverPersistenceAvailable) {
+    latestDeploymentStatus = null;
+    renderDeploymentStatus();
+    return null;
+  }
+  try {
+    const response = await fetch(apiUrl("/api/deployment/status"), { cache: "no-store" });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result.error) throw new Error(result.error || `部署状态接口返回 ${response.status}`);
+    latestDeploymentStatus = result;
+    renderDeploymentStatus(result);
+    return result;
+  } catch {
+    latestDeploymentStatus = null;
+    renderDeploymentStatus();
+    return null;
+  }
+}
+
+function renderLocalOssConfigStatus(statusOverride = null) {
+  const summary = $("#ossLocalConfigSummary");
+  const list = $("#ossLocalConfigList");
+  const button = $("#importLocalOssSettings");
+  if (!summary || !list) return;
+  const status = statusOverride || latestLocalOssConfigStatus;
+  if (!status) {
+    summary.textContent = serverPersistenceAvailable ? "正在检查本机 Cynadu / Prism 配置..." : "本机共享服务未连接，无法检查。";
+    list.innerHTML = "";
+    if (button) button.disabled = true;
+    return;
+  }
+  summary.textContent = status.importable
+    ? `找到可导入的本机 OSS 配置：${status.preferred}。`
+    : "没有找到完整的本机 OSS 配置；可手动填写上方字段。";
+  list.innerHTML = (status.candidates || []).map((candidate) => {
+    const fields = candidate.fields || {};
+    const missing = [];
+    if (!fields.bucket) missing.push("Bucket");
+    if (!fields.region && !fields.endpoint) missing.push("Region/Endpoint");
+    if (!fields.accessKeyId) missing.push("AccessKey ID");
+    if (!fields.accessKeySecret) missing.push("AccessKey Secret");
+    const value = !candidate.exists
+      ? "未找到"
+      : candidate.complete
+        ? "可导入"
+        : `缺少 ${missing.join("、") || "必要字段"}`;
+    return `
+      <li class="${candidate.complete ? "is-clear" : ""}">
+        <span>${escapeHtml(candidate.label || "本机配置")}</span>
+        <b>${escapeHtml(value)}</b>
+      </li>
+    `;
+  }).join("");
+  if (button) button.disabled = !status.importable;
+}
+
+async function refreshLocalOssConfigStatus() {
+  if (!serverPersistenceAvailable) {
+    latestLocalOssConfigStatus = null;
+    renderLocalOssConfigStatus();
+    return null;
+  }
+  try {
+    const response = await fetch(apiUrl("/api/oss/local-configs"), { cache: "no-store" });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result.error) throw new Error(result.error || `本机 OSS 配置接口返回 ${response.status}`);
+    latestLocalOssConfigStatus = result;
+    renderLocalOssConfigStatus(result);
+    return result;
+  } catch {
+    latestLocalOssConfigStatus = null;
+    renderLocalOssConfigStatus();
+    return null;
+  }
+}
+
+async function importLocalOssSettings() {
+  try {
+    if (!serverPersistenceAvailable) throw new Error("本机服务未连接，无法导入 OSS 配置。");
+    setOssStatus("正在从本机 Cynadu / Prism 配置导入 OSS 设置...", "good");
+    const response = await fetch(apiUrl("/api/oss/import-local-config"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}"
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result.error) throw new Error(result.error || `本机 OSS 配置导入接口返回 ${response.status}`);
+    if (result.state) applySharedState(result.state);
+    latestLocalOssConfigStatus = result.status || latestLocalOssConfigStatus;
+    renderLocalOssConfigStatus();
+    fillOssSettingsForm();
+    setOssStatus(`已导入 ${result.source || "本机"} OSS 配置，正在测试图片存储...`, "good");
+    await runOssStorageCheck();
+  } catch (error) {
+    setOssStatus(`导入本机 OSS 配置失败：${error.message}`, "bad");
+  }
+}
+
+async function runOssStorageCheck() {
+  try {
+    if (!serverPersistenceAvailable) throw new Error("本机服务未连接，无法检查图片存储。");
+    setOssStatus("正在测试 OSS 上传、公网读取，并同步已有图片...", "good");
+    const response = await fetch(apiUrl("/api/oss/migrate-images"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}"
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result.error) {
+      throw new Error(result.error || `OSS 图片存储接口返回 ${response.status}`);
+    }
+    if (result.state) applySharedState(result.state);
+    latestOssImageStorageStatus = result.status || null;
+    galleryPersistenceReady = false;
+    await loadSharedGallery();
+    renderHomeBackgroundSettings();
+    renderGallery({ persist: false });
+    renderCardCottage();
+    refreshDeploymentStatus();
+    const pending = result.status?.pending ?? ossImageStorageStatus().pending;
+    if (pending) {
+      setOssStatus(`已同步 ${result.migrated || 0} 张图片，但仍有 ${pending} 项需要检查。`, "bad");
+    } else {
+      const skippedText = result.skipped ? `，跳过 ${result.skipped} 项已就绪资源` : "";
+      setOssStatus(`OSS 测试通过，图片存储已就绪${result.migrated ? `，本次同步 ${result.migrated} 张图片` : ""}${skippedText}。`, "good");
+    }
+  } catch (error) {
+    setOssStatus(`OSS 图片存储检查失败：${error.message}`, "bad");
+    refreshDeploymentStatus();
+  }
+}
+
+async function saveOssSettingsFromForm() {
+  if (!serverPersistenceAvailable && location.protocol === "file:") {
+    await loadSharedState();
+  }
+  if (!serverPersistenceAvailable && location.protocol === "file:") {
+    setOssStatus(`本机服务没有连接，无法安全保存 OSS Key。请先运行本程序服务，再用 ${localApiOrigin}/ 打开。`, "bad");
+    throw new Error("本机服务未启动，无法保存 OSS 配置。");
+  }
+  const accessKeyId = $("#ossAccessKeyId").value.trim();
+  const accessKeySecret = $("#ossAccessKeySecret").value.trim();
+  const next = {
+    provider: "aliyun",
+    region: $("#ossRegion").value.trim(),
+    endpoint: $("#ossEndpoint").value.trim(),
+    bucket: $("#ossBucket").value.trim(),
+    accessKeyId,
+    accessKeySecret,
+    customDomain: $("#ossCustomDomain").value.trim(),
+    prefix: $("#ossPrefix").value.trim() || defaultOssSettings.prefix,
+    useSsl: true,
+    hasAccessKeyId: accessKeyId ? true : Boolean(state.ossSettings.hasAccessKeyId),
+    hasAccessKeySecret: accessKeySecret ? true : Boolean(state.ossSettings.hasAccessKeySecret)
+  };
+  if (!next.bucket || (!next.region && !next.endpoint)) {
+    setOssStatus("请至少填写 Bucket，并填写 Endpoint 或 Region。", "bad");
+    throw new Error("OSS 配置不完整。");
+  }
+  storeOssSettingsPublic(next);
+  if (serverPersistenceAvailable) {
+    await postSharedStatePatch({ ossSettings: next });
+  }
+  $("#ossAccessKeyId").value = "";
+  $("#ossAccessKeySecret").value = "";
+  fillOssSettingsForm();
+  setOssStatus("OSS 设置已保存，正在做真实上传测试...", "good");
+  showToast("OSS 设置已保存", "good");
+  await runOssStorageCheck();
+}
+
+function fillOssSettingsForm() {
+  if (!$("#ossBucket")) return;
+  $("#ossRegion").value = state.ossSettings.region || "";
+  $("#ossEndpoint").value = state.ossSettings.endpoint || "";
+  $("#ossBucket").value = state.ossSettings.bucket || "";
+  $("#ossAccessKeyId").value = "";
+  $("#ossAccessKeySecret").value = "";
+  $("#ossAccessKeyId").placeholder = state.ossSettings.hasAccessKeyId ? "已保存在本机私有存档；留空则继续使用" : "OSS AccessKey ID";
+  $("#ossAccessKeySecret").placeholder = state.ossSettings.hasAccessKeySecret ? "已保存在本机私有存档；留空则继续使用" : "OSS AccessKey Secret";
+  $("#ossCustomDomain").value = state.ossSettings.customDomain || "";
+  $("#ossPrefix").value = state.ossSettings.prefix || defaultOssSettings.prefix;
+  setOssStatus(state.ossSettings.bucket ? "OSS 将用于 Card Cottage、Art Gallery 和首页背景图上传。" : "配置 OSS 后，公网访问不会再依赖服务器保存图片。");
+}
+
+function homeBackgroundPreset(id) {
+  return (state.homeBackgroundPresets || []).find((item) => item.id === id)
+    || homeBackgroundPresets.find((item) => item.id === id)
+    || homeBackgroundPresets[0];
+}
+
+function homeBackgroundSrc(background = state.homeBackground) {
+  if (background?.mode === "custom" && background.src) return background.src;
+  return homeBackgroundPreset(background?.preset).src;
+}
+
+function applyHomeBackground() {
+  const image = $("#homeHeroImage") || $("#home .hero-poster > img");
+  if (!image) return;
+  image.src = homeBackgroundSrc();
+}
+
+function setHomeBackgroundStatus(message, tone = "") {
+  const status = $("#homeBackgroundStatus");
+  if (!status) return;
+  status.textContent = message;
+  status.className = `feedback ${tone}`.trim();
+}
+
+function persistHomeBackground() {
+  state.homeBackground = { ...defaultHomeBackground, ...state.homeBackground, src: homeBackgroundSrc(state.homeBackground) };
+  localStorage.setItem("jojoHomeBackground", JSON.stringify(state.homeBackground));
+  saveSharedState({ homeBackground: state.homeBackground });
+  applyHomeBackground();
+  renderHomeBackgroundSettings();
+  invalidateOssImageStorageStatus();
+}
+
+function renderHomeBackgroundSettings() {
+  const grid = $("#homeBackgroundPresetGrid");
+  if (!grid) return;
+  const presets = normalizeHomeBackgroundPresets(state.homeBackgroundPresets);
+  state.homeBackgroundPresets = presets;
+  grid.innerHTML = presets.map((preset) => `
+    <button class="home-bg-choice ${state.homeBackground.mode !== "custom" && state.homeBackground.preset === preset.id ? "is-active" : ""}" type="button" data-home-bg-preset="${preset.id}">
+      <img src="${preset.src}" alt="">
+      <span>${escapeHtml(preset.label)}${preset.storage === "oss" ? " · OSS" : ""}</span>
+    </button>
+  `).join("");
+  $all("[data-home-bg-preset]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const preset = homeBackgroundPreset(button.dataset.homeBgPreset);
+      state.homeBackground = {
+        mode: "preset",
+        preset: preset.id,
+        src: preset.src,
+        objectKey: preset.objectKey || "",
+        storage: preset.storage || "",
+        updatedAt: preset.updatedAt || ""
+      };
+      persistHomeBackground();
+      setHomeBackgroundStatus(`首页背景已切换为：${preset.label}。`, "good");
+    });
+  });
+  const preview = $("#homeBackgroundPreview");
+  if (preview) preview.src = homeBackgroundSrc();
+}
+
+async function uploadHomeBackgroundFile(file) {
+  if (!file) return;
+  try {
+    setHomeBackgroundStatus("正在上传首页背景到 OSS...", "good");
+    const upload = await uploadImageFileToOss(file, "home-backgrounds");
+    state.homeBackground = {
+      mode: "custom",
+      preset: "",
+      src: upload.src,
+      objectKey: upload.objectKey,
+      storage: "oss",
+      name: upload.name || file.name,
+      mime: upload.mime,
+      size: upload.size,
+      updatedAt: upload.updatedAt
+    };
+    persistHomeBackground();
+    setHomeBackgroundStatus("首页背景已上传到 OSS 并保存。", "good");
+  } catch (error) {
+    setHomeBackgroundStatus(error.message || "首页背景上传失败。", "bad");
+  }
+}
+
+function installHomeBackgroundUpload() {
+  const dropzone = $("#homeBackgroundDropzone");
+  const input = $("#homeBackgroundFile");
+  if (!dropzone || !input) return;
+  dropzone.addEventListener("click", (event) => {
+    if (event.target !== input) input.click();
+  });
+  input.addEventListener("change", () => {
+    const file = input.files?.[0];
+    if (file) uploadHomeBackgroundFile(file);
+    input.value = "";
+  });
+  ["dragenter", "dragover"].forEach((type) => {
+    dropzone.addEventListener(type, (event) => {
+      event.preventDefault();
+      dropzone.classList.add("is-dragging");
+    });
+  });
+  ["dragleave", "drop"].forEach((type) => {
+    dropzone.addEventListener(type, (event) => {
+      event.preventDefault();
+      if (type === "dragleave" && dropzone.contains(event.relatedTarget)) return;
+      dropzone.classList.remove("is-dragging");
+    });
+  });
+  dropzone.addEventListener("drop", (event) => {
+    event.preventDefault();
+    dropzone.classList.remove("is-dragging");
+    const file = event.dataTransfer?.files?.[0];
+    if (file) uploadHomeBackgroundFile(file);
+  });
+}
+
+function dataUrlMime(dataUrl) {
+  const match = String(dataUrl || "").match(/^data:([^;]+);base64,/);
+  return match ? match[1] : "";
+}
+
+async function uploadImageDataUrlToOss(dataUrl, fileName, folder) {
+  assertOssUploadReady();
+  const response = await fetch(apiUrl("/api/oss/upload-image"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dataUrl, fileName, folder })
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || result.error) {
+    throw new Error(result.error || `OSS 上传接口返回 ${response.status}`);
+  }
+  return result;
+}
+
+async function uploadImageFileToOss(file, folder) {
+  if (!file?.type?.startsWith("image/")) throw new Error("请选择图片文件。");
+  assertOssUploadReady();
+  const dataUrl = await readFileAsDataUrl(file);
+  return uploadImageDataUrlToOss(dataUrl, file.name || "image", folder);
+}
+
+async function testSavedOssSettings() {
+  if (!serverPersistenceAvailable) throw new Error("本机服务未连接，无法测试 OSS。");
+  const response = await fetch(apiUrl("/api/oss/test"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}"
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || result.error) {
+    throw new Error(result.error || `OSS 测试接口返回 ${response.status}`);
+  }
+  return result;
+}
+
+function imageSourceNeedsOss(src) {
+  const value = String(src || "");
+  return value.startsWith("data:") || value.startsWith("/api/card-cottage/assets/");
+}
+
 async function saveAiSettingsFromForm() {
   const model = "MiniMax-M3";
   const apiKey = $("#aiApiKey").value.trim();
@@ -36444,7 +36978,13 @@ function fillWordSettingsForm() {
 
 function openSettings() {
   fillAiSettingsForm();
+  fillOssSettingsForm();
+  renderHomeBackgroundSettings();
+  renderLocalOssConfigStatus();
+  renderDeploymentStatus();
   $("#settingsDialog").showModal();
+  refreshLocalOssConfigStatus();
+  refreshDeploymentStatus();
 }
 
 function openWordSettings() {
@@ -36534,6 +37074,17 @@ function applySharedState(data) {
     state.gallery = data.gallery;
     localStorage.setItem("jojoGallery", JSON.stringify(state.gallery));
   }
+  if (data.homeBackground && typeof data.homeBackground === "object") {
+    state.homeBackground = { ...defaultHomeBackground, ...data.homeBackground };
+    localStorage.setItem("jojoHomeBackground", JSON.stringify(state.homeBackground));
+    applyHomeBackground();
+  }
+  if (Array.isArray(data.homeBackgroundPresets)) {
+    state.homeBackgroundPresets = normalizeHomeBackgroundPresets(data.homeBackgroundPresets);
+    localStorage.setItem("jojoHomeBackgroundPresets", JSON.stringify(state.homeBackgroundPresets));
+    applyHomeBackground();
+    renderHomeBackgroundSettings();
+  }
   if (data.appSettings && typeof data.appSettings === "object") {
     state.appSettings = { ...defaultAppSettings, ...data.appSettings };
     localStorage.setItem("jojoAppSettings", JSON.stringify(state.appSettings));
@@ -36559,6 +37110,10 @@ function applySharedState(data) {
       hasApiKey: state.aiSettings.hasApiKey
     }));
   }
+  if (data.ossSettings) {
+    storeOssSettingsPublic(data.ossSettings);
+    fillOssSettingsForm();
+  }
   if (data.phonicsQuest && typeof data.phonicsQuest === "object") {
     state.phonicsQuest = { ...loadPhonicsQuestState(), ...data.phonicsQuest };
     localStorage.setItem("jojoPhonicsQuestState", JSON.stringify(state.phonicsQuest));
@@ -36575,7 +37130,7 @@ function applySharedState(data) {
 
 async function loadSharedState() {
   try {
-    const response = await fetch(apiUrl("/api/state"), {
+    const response = await fetch(apiUrl("/api/state?lite=1"), {
       cache: "no-store"
     });
     if (!response.ok) throw new Error("state unavailable");
@@ -36584,6 +37139,63 @@ async function loadSharedState() {
   } catch {
     serverPersistenceAvailable = false;
   }
+}
+
+async function loadSharedGallery() {
+  if (!serverPersistenceAvailable) {
+    galleryPersistenceReady = true;
+    return;
+  }
+  try {
+    const response = await fetch(apiUrl("/api/gallery"), { cache: "no-store" });
+    if (!response.ok) throw new Error("gallery unavailable");
+    const data = await response.json();
+    if (Array.isArray(data.gallery)) {
+      state.gallery = data.gallery;
+      localStorage.setItem("jojoGallery", JSON.stringify(state.gallery));
+      galleryPersistenceReady = true;
+      renderGallery({ persist: false });
+    }
+  } catch {
+    galleryPersistenceReady = true;
+  }
+}
+
+async function loadSharedSongHistory({ restoreLatest = false } = {}) {
+  if (!serverPersistenceAvailable) {
+    renderSongHistory();
+    return;
+  }
+  try {
+    const response = await fetch(apiUrl("/api/song-history"), { cache: "no-store" });
+    if (!response.ok) throw new Error("song history unavailable");
+    const data = await response.json();
+    if (Array.isArray(data.songHistory)) {
+      state.songHistory = data.songHistory.filter((item) => item?.analysis).slice(0, 20);
+      localStorage.setItem("jojoSongHistory", JSON.stringify(state.songHistory));
+      if (restoreLatest && state.songHistory.some((item) => item?.analysis)) {
+        restoreSongHistory(0);
+      } else {
+        renderSongHistory();
+      }
+    }
+  } catch {
+    renderSongHistory();
+  }
+}
+
+async function loadSharedWordProgress() {
+  if (!serverPersistenceAvailable) return;
+  try {
+    const response = await fetch(apiUrl("/api/word-progress"), { cache: "no-store" });
+    if (!response.ok) throw new Error("word progress unavailable");
+    const data = await response.json();
+    if (data.wordProgress && typeof data.wordProgress === "object") {
+      state.wordProgress = data.wordProgress;
+      localStorage.setItem("jojoWordProgress", JSON.stringify(state.wordProgress));
+      renderWordStudyState({ syncSelect: true, library: currentViewId() === "words" });
+    }
+  } catch {}
 }
 
 async function saveSharedState(patch = {}) {
@@ -38040,13 +38652,8 @@ function renderSongHistory() {
     return;
   }
   const activeIndex = Math.max(0, history.findIndex((item) => item.id === state.activeSongHistoryId));
-  const recent = history.slice(0, 4);
   container.innerHTML = `
-    <div class="song-history-head">
-      <strong>历史歌曲</strong>
-      <span>${state.songHistory.length} 首</span>
-    </div>
-    <label class="song-history-select-label">选择已分析歌曲
+    <label class="song-history-select-label">历史歌曲
       <select id="songHistorySelect">
         ${history.map((item, index) => `
           <option value="${index}"${index === activeIndex ? " selected" : ""}>
@@ -38055,23 +38662,9 @@ function renderSongHistory() {
         `).join("")}
       </select>
     </label>
-    <div class="song-history-list">
-      ${recent.map((item) => {
-        const index = history.findIndex((entry) => entry.id === item.id);
-        return `
-        <button class="song-history-item${item.id === state.activeSongHistoryId ? " active" : ""}" type="button" data-song-history-index="${index}">
-          <strong>${escapeHtml(item.title || "Song Notes")}</strong>
-          <span>${escapeHtml([item.artist, formatSongHistoryDate(item.analyzedAt)].filter(Boolean).join(" · "))}</span>
-        </button>
-      `;
-      }).join("")}
-    </div>
   `;
   $("#songHistorySelect")?.addEventListener("change", (event) => {
     restoreSongHistory(Number(event.target.value));
-  });
-  $all(".song-history-item").forEach((button) => {
-    button.addEventListener("click", () => restoreSongHistory(Number(button.dataset.songHistoryIndex)));
   });
 }
 
@@ -38531,7 +39124,8 @@ function analyzeArt(title, note) {
 function persistGallery() {
   localStorage.setItem("jojoGallery", JSON.stringify(state.gallery));
   $("#galleryCount").textContent = state.gallery.length;
-  saveSharedState({ gallery: state.gallery });
+  if (galleryPersistenceReady) saveSharedState({ gallery: state.gallery });
+  invalidateOssImageStorageStatus();
 }
 
 function gallerySortValue(art) {
@@ -38549,7 +39143,7 @@ function galleryTileWidthForRatio(ratio) {
   return Math.max(120, Math.min(520, Math.round(ratio * 240)));
 }
 
-function renderGallery() {
+function renderGallery(options = {}) {
   const items = state.gallery
     .map((art, index) => ({ ...art, __index: index }))
     .sort((a, b) => gallerySortValue(b) - gallerySortValue(a) || String(b.date || "").localeCompare(String(a.date || "")));
@@ -38575,7 +39169,7 @@ function renderGallery() {
     const image = card.querySelector("img");
     image?.addEventListener("load", () => repairGalleryArtworkRatio(card, image), { once: true });
   });
-  persistGallery();
+  if (options.persist !== false) persistGallery();
 }
 
 function repairGalleryArtworkRatio(card, image) {
@@ -38667,8 +39261,12 @@ async function addArtwork(event) {
     return;
   }
   try {
+    if (!galleryPersistenceReady) await loadSharedGallery();
+    assertOssUploadReady();
     const dataUrl = await readFileAsDataUrl(file);
     const dimensions = await imageDimensions(dataUrl);
+    showToast("正在上传作品到 OSS...", "good");
+    const upload = await uploadImageDataUrlToOss(dataUrl, file.name || "artwork", "art-gallery");
     const title = $("#artTitle").value.trim();
     const note = $("#artNote").value.trim();
     state.gallery.push({
@@ -38676,7 +39274,9 @@ async function addArtwork(event) {
       date: $("#artDate").value,
       createdAt: new Date().toISOString(),
       note,
-      image: dataUrl,
+      image: upload.src,
+      objectKey: upload.objectKey,
+      storage: "oss",
       width: dimensions.width,
       height: dimensions.height,
       ai: analyzeArt(title, note)
@@ -38947,6 +39547,7 @@ async function uploadCardCottageSlot(slotIndex, file) {
   if (!Number.isInteger(index) || index < 0 || index >= cardCottageSlotTotal || !file) return;
   try {
     setCardSettingsStatus(`正在处理 Slot ${String(index + 1).padStart(2, "0")} 的图片...`, "good");
+    assertOssUploadReady();
     const dataUrl = await resizeCardImageFile(file);
     let slot;
     if (serverPersistenceAvailable) {
@@ -38955,14 +39556,10 @@ async function uploadCardCottageSlot(slotIndex, file) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ slot: index, fileName: file.name, dataUrl })
       });
-      if (!response.ok) throw new Error(`上传接口返回 ${response.status}`);
       slot = await response.json();
+      if (!response.ok || slot.error) throw new Error(slot.error || `上传接口返回 ${response.status}`);
     } else {
-      slot = {
-        name: file.name || `Card ${index + 1}`,
-        src: dataUrl,
-        updatedAt: new Date().toISOString()
-      };
+      throw new Error("请先用本机服务打开应用，并在主页设置里配置 OSS。");
     }
     state.cardCottage.slots[index] = slot;
     rerollCardCottageAssignments();
@@ -38979,7 +39576,15 @@ async function deleteCardCottageSlot(slotIndex) {
   if (!Number.isInteger(index) || index < 0 || index >= cardCottageSlotTotal) return;
   const slot = state.cardCottage?.slots?.[index];
   if (!slot?.src) return;
-    if (serverPersistenceAvailable && slot.src.startsWith("/api/card-cottage/assets/")) {
+  if (serverPersistenceAvailable && slot.objectKey) {
+    try {
+      await fetch(apiUrl("/api/oss/delete"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ objectKey: slot.objectKey })
+      });
+    } catch {}
+  } else if (serverPersistenceAvailable && slot.src.startsWith("/api/card-cottage/assets/")) {
     try {
       await fetch(apiUrl("/api/card-cottage/delete"), {
         method: "POST",
@@ -39099,6 +39704,8 @@ function bindEvents() {
   $("#closeWordSettings").addEventListener("click", closeWordSettings);
   $("#aiMode").addEventListener("change", syncEndpointForMode);
   $("#saveAiSettings").addEventListener("click", saveAiSettingsFromForm);
+  $("#saveOssSettings").addEventListener("click", saveOssSettingsFromForm);
+  $("#importLocalOssSettings").addEventListener("click", importLocalOssSettings);
   $("#saveWordSettings").addEventListener("click", saveWordSettingsFromForm);
   $("#saveCardCottageTotal").addEventListener("click", saveCardCottageTotalFromForm);
   $("#cardCottageTotalInput").addEventListener("keydown", (event) => {
@@ -39238,6 +39845,7 @@ function bindEvents() {
   $("#speakSongAll").addEventListener("click", speakSongAll);
   $("#artForm").addEventListener("submit", addArtwork);
   installArtUploadInteractions();
+  installHomeBackgroundUpload();
   $("#exportGallery").addEventListener("click", exportGallery);
   $("#closeArtPreview").addEventListener("click", closeArtPreview);
   $("#artPreviewDialog").addEventListener("click", (event) => {
@@ -39257,9 +39865,13 @@ async function init() {
   installCustomWordBankLabels();
   syncWordBankSelect();
   fillAiSettingsForm();
+  fillOssSettingsForm();
+  refreshDeploymentStatus();
   state.cardCottage = normalizeCardCottageState(state.cardCottage);
   saveCardCottageState();
   applyArtMode();
+  applyHomeBackground();
+  renderHomeBackgroundSettings();
   renderHomeTileMeanings();
   bindEvents();
   setView();
@@ -39271,7 +39883,10 @@ async function init() {
   } else {
     renderSongEmpty();
   }
-  renderGallery();
+  loadSharedWordProgress();
+  loadSharedSongHistory({ restoreLatest: true });
+  renderGallery({ persist: false });
+  loadSharedGallery();
   renderCardCottage();
 }
 

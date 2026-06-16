@@ -6,7 +6,7 @@
     <title>Jojo LAB</title>
     <link rel="icon" type="image/svg+xml" href="./assets/jojo-logo.svg">
     <link rel="apple-touch-icon" href="./assets/jojo-logo.svg">
-    <link rel="stylesheet" href="./styles.css?v=20260615-art-gallery-edge-fill">
+    <link rel="stylesheet" href="./styles.css?v=20260616-oss-storage-clean">
   </head>
   <body>
     <div class="app-shell">
@@ -34,7 +34,7 @@
         <section id="home" class="view active" aria-label="Jojo LAB 子程序入口">
           <div class="poster-sheet">
             <figure class="hero-poster" aria-label="Jojo LAB 复古学习车插画">
-              <img src="./assets/jojo-retro-hero-robot-cheer.png" alt="Jojo 坐在复古学习小巴车门旁弹尤克里里，旁边有红金装甲机器人朋友背对镜头竖起大拇指鼓励他">
+              <img id="homeHeroImage" src="./assets/jojo-retro-hero-robot-cheer.png" alt="Jojo 坐在复古学习小巴车门旁弹尤克里里，旁边有红金装甲机器人朋友背对镜头竖起大拇指鼓励他">
               <div class="module-grid" aria-label="子程序入口">
                 <a class="module-tile tile-kana" href="#kana" data-speak="Kana Quest" data-zh="日语五十音识读">
                   <span class="module-icon" aria-hidden="true">
@@ -330,10 +330,10 @@
           <div class="tool-layout">
             <aside class="control-panel">
               <div class="song-info-window">
-                <label>歌曲信息
-                  <textarea id="songQuery" rows="4" placeholder="一句歌词、MV 画面、歌手、旋律印象，或 Jojo 怎么描述这首歌"></textarea>
-                </label>
-                <div class="song-info-grid">
+                <div class="song-info-row">
+                  <label>歌曲线索
+                    <input id="songQuery" placeholder="一句歌词、MV 画面、旋律印象">
+                  </label>
                   <label>歌曲名
                     <input id="songTitle" placeholder="可选">
                   </label>
@@ -408,7 +408,7 @@
                 <textarea id="artNote" rows="3" placeholder="他说这幅画里发生了什么？"></textarea>
               </label>
               <button class="primary-btn" type="submit">加入画廊</button>
-              <p class="fine-print">作品会保存在当前浏览器的本地存储里。配置 MiniMax 后会自动生成作品分析。</p>
+              <p class="fine-print">作品图片会上传到 OSS；本地共享状态只保存作品信息和图片 URL。配置 MiniMax 后会自动生成作品分析。</p>
             </form>
             <div class="gallery-wall">
               <div id="artGrid" class="art-grid"></div>
@@ -454,39 +454,103 @@
         <div class="settings-head">
           <div>
             <p class="eyebrow">Home Settings</p>
-            <h2 id="settingsTitle">主页 API 设置</h2>
-            <p class="section-subtitle">MiniMax-M3 配置在主页统一管理，供 Song Notes 和 Art Gallery 使用。</p>
+            <h2 id="settingsTitle">主页设置</h2>
+            <p class="section-subtitle">MiniMax、OSS 和首页背景在这里统一管理。</p>
           </div>
           <button class="ghost-btn icon-close" id="closeSettings" type="button" aria-label="关闭设置">×</button>
         </div>
-        <div class="settings-grid">
-          <label>调用方式
-            <select id="aiMode">
-              <option value="minimax-openai">MiniMax 官方 OpenAI-compatible</option>
-              <option value="minimax-v2">MiniMax 官方 ChatCompletion V2</option>
-              <option value="proxy">自建代理接口</option>
-            </select>
-          </label>
-          <label>API 地址
-            <input id="aiEndpoint" placeholder="https://api.minimax.io/v1/chat/completions">
-          </label>
-          <label>模型
-            <select id="aiModel">
-              <option value="MiniMax-M3">MiniMax-M3</option>
-            </select>
-          </label>
-          <label class="api-key-label">API Key
-            <span class="api-key-row">
-              <input id="aiApiKey" type="password" autocomplete="off" placeholder="只保存在本机私有存档">
-              <button class="ghost-btn" id="testAiSettings" type="button">测试连接</button>
-            </span>
-          </label>
-        </div>
-        <p class="fine-print">MiniMax 官方模式会按 Chat Completions 逻辑发送：Authorization Bearer、model、messages、temperature、stream:false。家庭局域网私用可以直连；公网部署仍建议把 Key 放到自建代理里。</p>
-        <div id="aiSettingsStatus" class="feedback" role="status"></div>
-        <div class="settings-actions">
-          <button class="primary-btn" id="saveAiSettings" type="button">保存 API 设置</button>
-        </div>
+        <section class="settings-section" aria-labelledby="aiSettingsHeading">
+          <h3 id="aiSettingsHeading">MiniMax-M3</h3>
+          <div class="settings-grid">
+            <label>调用方式
+              <select id="aiMode">
+                <option value="minimax-openai">MiniMax 官方 OpenAI-compatible</option>
+                <option value="minimax-v2">MiniMax 官方 ChatCompletion V2</option>
+                <option value="proxy">自建代理接口</option>
+              </select>
+            </label>
+            <label>API 地址
+              <input id="aiEndpoint" placeholder="https://api.minimax.io/v1/chat/completions">
+            </label>
+            <label>模型
+              <select id="aiModel">
+                <option value="MiniMax-M3">MiniMax-M3</option>
+              </select>
+            </label>
+            <label class="api-key-label">API Key
+              <span class="api-key-row">
+                <input id="aiApiKey" type="password" autocomplete="off" placeholder="只保存在本机私有存档">
+                <button class="ghost-btn" id="testAiSettings" type="button">测试连接</button>
+              </span>
+            </label>
+          </div>
+          <p class="fine-print">MiniMax 官方模式会按 Chat Completions 逻辑发送：Authorization Bearer、model、messages、temperature、stream:false。家庭局域网私用可以直连；公网部署仍建议把 Key 放到自建代理里。</p>
+          <div id="aiSettingsStatus" class="feedback" role="status"></div>
+          <div class="settings-actions">
+            <button class="primary-btn" id="saveAiSettings" type="button">保存 API 设置</button>
+          </div>
+        </section>
+        <section class="settings-section" aria-labelledby="ossSettingsHeading">
+          <h3 id="ossSettingsHeading">OSS 图片存储</h3>
+          <div class="settings-grid">
+            <label>Region
+              <input id="ossRegion" placeholder="oss-cn-hangzhou">
+            </label>
+            <label>Endpoint
+              <input id="ossEndpoint" placeholder="oss-cn-hangzhou.aliyuncs.com">
+            </label>
+            <label>Bucket
+              <input id="ossBucket" placeholder="jojo-assets">
+            </label>
+            <label>保存路径前缀
+              <input id="ossPrefix" placeholder="jojo-site">
+            </label>
+            <label class="api-key-label">AccessKey
+              <span class="api-key-row oss-key-row">
+                <input id="ossAccessKeyId" type="password" autocomplete="off" placeholder="OSS AccessKey ID">
+                <input id="ossAccessKeySecret" type="password" autocomplete="off" placeholder="OSS AccessKey Secret">
+              </span>
+            </label>
+            <label class="api-key-label">自定义域名 / CDN
+              <input id="ossCustomDomain" placeholder="https://assets.example.com">
+            </label>
+          </div>
+          <p class="fine-print">建议 Bucket 或自定义域名可被公网读取；AccessKey 只保存在本机私有存档，不会写进 GitHub。</p>
+          <div class="oss-status-panel oss-local-config-panel" aria-labelledby="ossLocalConfigTitle">
+            <div>
+              <strong id="ossLocalConfigTitle">本机 Cynadu / Prism 配置</strong>
+              <p id="ossLocalConfigSummary" class="fine-print">正在检查是否可复用本机 OSS 配置。</p>
+            </div>
+            <ul id="ossLocalConfigList" class="oss-status-list"></ul>
+          </div>
+          <div class="oss-status-panel deployment-status-panel" aria-labelledby="deploymentStatusTitle">
+            <div>
+              <strong id="deploymentStatusTitle">公网运行检查</strong>
+              <p id="deploymentStatusSummary" class="fine-print">检查共享状态、Song Notes 历史、OSS 和图片存储。</p>
+            </div>
+            <ul id="deploymentStatusList" class="oss-status-list"></ul>
+          </div>
+          <div id="ossSettingsStatus" class="feedback" role="status"></div>
+          <div class="settings-actions">
+            <button class="ghost-btn" id="importLocalOssSettings" type="button">导入本机 OSS</button>
+            <button class="primary-btn" id="saveOssSettings" type="button">保存 OSS 设置</button>
+          </div>
+        </section>
+        <section class="settings-section" aria-labelledby="homeBackgroundHeading">
+          <h3 id="homeBackgroundHeading">首页背景图</h3>
+          <div class="home-bg-settings">
+            <div class="home-bg-preset-grid" id="homeBackgroundPresetGrid" aria-label="首页背景预设"></div>
+            <div class="home-bg-upload" id="homeBackgroundDropzone">
+              <input id="homeBackgroundFile" type="file" accept="image/*">
+              <img id="homeBackgroundPreview" alt="当前首页背景预览">
+              <div>
+                <strong>拖拽新背景到这里</strong>
+                <small>上传后会保存到 OSS，并用于所有入口</small>
+              </div>
+            </div>
+          </div>
+          <div id="homeBackgroundStatus" class="feedback" role="status"></div>
+        </section>
       </form>
     </dialog>
 
@@ -715,6 +779,6 @@
       </form>
     </dialog>
 
-    <script src="./app.js?v=20260615-art-gallery-edge-fill"></script>
+    <script src="./app.js?v=20260616-oss-storage-clean"></script>
   </body>
 </html>

@@ -63,7 +63,8 @@ Primary use cases:
 - The MiniMax workflow should make real API errors visible. Do not show "没有找到明确候选" when the model returned an error such as invalid key, quota, model, or endpoint failure.
 - Song Notes should distinguish MiniMax auth/key errors from long-request timeouts and network/proxy failures; do not collapse 401 invalid-key errors into generic VPN guidance.
 - Successful song analyses must persist. A refreshed page should restore the latest analysis and expose recent analyzed songs in the Song Notes workflow.
-- Song Notes should restore the latest analyzed song when opened, and the left panel bottom should provide a full analyzed-song history selector.
+- Song Notes should restore the latest analyzed song when opened, and song history should be exposed only as one full analyzed-song dropdown selector; do not render separate history song cards or lists in the left sidebar.
+- Song Notes' left sidebar should show the full workflow without internal vertical scrolling on iPad landscape; keep song clue/title/artist in one compact row when needed.
 - When a new Song Notes analysis starts, the right panel should immediately switch to the new song title and show a friendly progress state instead of leaving the previous analysis visible.
 - When Song Notes analysis starts, candidate search cards must disappear completely; do not leave them above, behind, or visually competing with the analysis progress/results.
 - Song Notes candidate search should also switch the right panel to the new song information and show the same friendly progress state instead of leaving the previous analysis visible.
@@ -134,6 +135,10 @@ Primary use cases:
 - Keep changes scoped to the relevant module.
 - When the user gives a new interface preference, art direction, usage constraint, or correction to a bad UI decision, update this AGENTS.md file in the same task so future agents do not repeat the mistake.
 - Learning progress, generated analyses, imported word banks, gallery items, stars/rewards, app settings, and similar user-created value should persist across refreshes and across all terminals. Prefer localStorage plus the local shared state service when available.
+- For internet deployment, do not store newly uploaded user images in the repo, in browser-only state, or in server-local upload folders. Use the configured OSS storage for Card Cottage, Art Gallery, and custom homepage backgrounds; keep shared state limited to metadata, public URLs, and object keys.
+- Homepage background presets should also be mirrored to OSS after OSS is configured. Built-in assets can remain as offline fallbacks, but the public deployment path should prefer OSS URLs for both preset and custom backgrounds.
+- OSS credentials belong only in `work/private/` shared state or environment variables. Never hard-code OSS keys, never echo them in responses, and never commit them.
+- Keep first-load shared state lightweight for public/tunnel access. Do not make Song Notes, home navigation, or other non-gallery views wait on large base64 gallery payloads; load large media state lazily or store media on OSS.
 - After frontend layout changes, verify with the browser at desktop/default and iPad-like sizes.
 - If a layout regression happens because of a global rule, add a scoped override for the affected module instead of weakening the whole app.
 - Preserve user data and private files. Never print API keys or other secrets in responses.

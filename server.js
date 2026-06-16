@@ -1,4 +1,6 @@
 const http = require("http");
+const https = require("https");
+const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const { execFile } = require("child_process");
@@ -10,6 +12,8 @@ const dataFile = path.join(dataDir, "jojo-state.json");
 const cardAssetDir = path.join(dataDir, "card-cottage");
 const port = Number(process.env.PORT || 4173);
 const host = process.env.HOST || "127.0.0.1";
+const maxJsonBodyBytes = 32 * 1024 * 1024;
+const maxImageUploadBytes = 14 * 1024 * 1024;
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -43,12 +47,25 @@ const defaultState = {
   played: 0,
   artMode: false,
   gallery: null,
+  homeBackground: { mode: "preset", preset: "robot-cheer", src: "./assets/jojo-retro-hero-robot-cheer.png" },
+  homeBackgroundPresets: [],
   aiSettings: {
     mode: "minimax-openai",
     endpoint: "https://api.minimax.io/v1/chat/completions",
     model: "MiniMax-M3",
     customModel: "",
     apiKey: ""
+  },
+  ossSettings: {
+    provider: "aliyun",
+    region: "",
+    endpoint: "",
+    bucket: "",
+    accessKeyId: "",
+    accessKeySecret: "",
+    customDomain: "",
+    prefix: "jojo-site",
+    useSsl: true
   }
 };
 
@@ -73,6 +90,9 @@ function readState() {
     state.kanaRewards = { ...defaultState.kanaRewards, ...(state.kanaRewards || {}) };
     state.phonicsRewards = { ...defaultState.phonicsRewards, ...(state.phonicsRewards || {}) };
     state.aiSettings = { ...defaultState.aiSettings, ...(state.aiSettings || {}), model: "MiniMax-M3", customModel: "" };
+    state.ossSettings = { ...defaultState.ossSettings, ...(state.ossSettings || {}) };
+    state.homeBackground = { ...defaultState.homeBackground, ...(state.homeBackground || {}) };
+    state.homeBackgroundPresets = Array.isArray(state.homeBackgroundPresets) ? state.homeBackgroundPresets : [];
     return state;
   } catch {
     return { ...defaultState };
@@ -84,14 +104,40 @@ function writeState(state) {
   fs.writeFileSync(dataFile, JSON.stringify(state, null, 2), { mode: 0o600 });
 }
 
-function publicState(state) {
+function publicOssSettingsForState(state) {
+  const ossSettings = { ...defaultState.ossSettings, ...(state.ossSettings || {}) };
+  return {
+    provider: ossSettings.provider || "aliyun",
+    region: ossSettings.region || process.env.OSS_REGION || "",
+    endpoint: ossSettings.endpoint || process.env.OSS_ENDPOINT || "",
+    bucket: ossSettings.bucket || process.env.OSS_BUCKET || "",
+    customDomain: ossSettings.customDomain || process.env.OSS_CUSTOM_DOMAIN || "",
+    prefix: resolveOssPrefix(ossSettings),
+    useSsl: ossSettings.useSsl !== false,
+    hasAccessKeyId: Boolean(ossSettings.accessKeyId || process.env.OSS_ACCESS_KEY_ID),
+    hasAccessKeySecret: Boolean(ossSettings.accessKeySecret || process.env.OSS_ACCESS_KEY_SECRET)
+  };
+}
+
+function publicState(state, options = {}) {
   const aiSettings = { ...defaultState.aiSettings, ...(state.aiSettings || {}) };
   const hasApiKey = Boolean(aiSettings.apiKey);
   delete aiSettings.apiKey;
-  return { ...state, aiSettings: { ...aiSettings, hasApiKey } };
+  const result = {
+    ...state,
+    aiSettings: { ...aiSettings, hasApiKey },
+    ossSettings: publicOssSettingsForState(state)
+  };
+  applySignedOssUrlsToPublicState(result);
+  if (options.lite) {
+    delete result.gallery;
+    delete result.songHistory;
+    delete result.wordProgress;
+  }
+  return result;
 }
 
-function mergeStatePatch(patch) {
+function mergeStatePatch(patch, publicOptions = {}) {
   const current = readState();
   const next = { ...current };
   if (patch.wordProgressPatch && typeof patch.wordProgressPatch === "object") {
@@ -104,7 +150,7 @@ function mergeStatePatch(patch) {
       }
     });
   }
-  ["wordProgress", "wordRewards", "dailyWordPlan", "gallery", "deletedWordBanks", "customWordBanks", "songHistory", "kanaProgress", "kanaRewards", "phonicsQuest", "phonicsRewards", "cardCottage", "appSettings"].forEach((key) => {
+  ["wordProgress", "wordRewards", "dailyWordPlan", "gallery", "deletedWordBanks", "customWordBanks", "songHistory", "kanaProgress", "kanaRewards", "phonicsQuest", "phonicsRewards", "cardCottage", "appSettings", "homeBackground", "homeBackgroundPresets"].forEach((key) => {
     if (key in patch) next[key] = patch[key];
   });
   ["wordBank", "dailyWordCount", "kanaScore", "played", "artMode"].forEach((key) => {
@@ -123,8 +169,26 @@ function mergeStatePatch(patch) {
     delete next.aiSettings.hasApiKey;
     delete next.aiSettings.clearApiKey;
   }
+  if (patch.ossSettings) {
+    const previous = current.ossSettings || {};
+    const incoming = patch.ossSettings || {};
+    next.ossSettings = {
+      ...defaultState.ossSettings,
+      ...previous,
+      ...incoming,
+      accessKeyId: incoming.accessKeyId ? incoming.accessKeyId : previous.accessKeyId || "",
+      accessKeySecret: incoming.accessKeySecret ? incoming.accessKeySecret : previous.accessKeySecret || "",
+      useSsl: incoming.useSsl !== false
+    };
+    if (incoming.clearAccessKeyId) next.ossSettings.accessKeyId = "";
+    if (incoming.clearAccessKeySecret) next.ossSettings.accessKeySecret = "";
+    delete next.ossSettings.hasAccessKeyId;
+    delete next.ossSettings.hasAccessKeySecret;
+    delete next.ossSettings.clearAccessKeyId;
+    delete next.ossSettings.clearAccessKeySecret;
+  }
   writeState(next);
-  return publicState(next);
+  return publicState(next, publicOptions);
 }
 
 function readJson(req) {
@@ -132,7 +196,7 @@ function readJson(req) {
     let body = "";
     req.on("data", (chunk) => {
       body += chunk;
-      if (body.length > 20 * 1024 * 1024) {
+      if (body.length > maxJsonBodyBytes) {
         reject(new Error("Request body is too large"));
         req.destroy();
       }
@@ -192,30 +256,652 @@ function imageExtensionForMime(mime) {
   return ".jpg";
 }
 
-function saveCardCottageUpload(body) {
-  ensureCardAssetDir();
-  const slot = Number(body.slot);
-  if (!Number.isInteger(slot) || slot < 0 || slot >= 50) throw new Error("Invalid Card Cottage slot.");
-  const dataUrl = String(body.dataUrl || "");
-  const match = dataUrl.match(/^data:(image\/(?:jpeg|jpg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
-  if (!match) throw new Error("只支持 JPG、PNG 或 WebP 图片。");
-  const mime = match[1] === "image/jpg" ? "image/jpeg" : match[1];
+function normalizeImageMime(mime) {
+  const normalized = String(mime || "").toLowerCase().split(";")[0].trim();
+  if (normalized === "image/jpg") return "image/jpeg";
+  if (["image/jpeg", "image/png", "image/webp", "image/gif"].includes(normalized)) return normalized;
+  return "";
+}
+
+function parseImageDataUrl(dataUrl) {
+  const match = String(dataUrl || "").match(/^data:(image\/(?:jpeg|jpg|png|webp|gif));base64,([A-Za-z0-9+/=]+)$/);
+  if (!match) throw new Error("只支持 JPG、PNG、WebP 或 GIF 图片。");
+  const mime = normalizeImageMime(match[1]);
+  if (!mime) throw new Error("图片格式不支持。");
   const buffer = Buffer.from(match[2], "base64");
-  if (!buffer.length || buffer.length > 12 * 1024 * 1024) throw new Error("图片太大，请换一张较小的图片。");
+  if (!buffer.length) throw new Error("图片数据为空。");
+  if (buffer.length > maxImageUploadBytes) throw new Error("图片太大，请控制在 14MB 以内。");
+  return { mime, buffer };
+}
 
-  const state = readState();
-  const previousSlot = Array.isArray(state.cardCottage?.slots) ? state.cardCottage.slots[slot] : null;
-  deleteCardAssetSrc(previousSlot?.src);
+function safeObjectPart(value, fallback = "image") {
+  return String(value || fallback)
+    .normalize("NFKD")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || fallback;
+}
 
-  const fileName = `slot-${String(slot + 1).padStart(2, "0")}-${Date.now()}${imageExtensionForMime(mime)}`;
-  const filePath = path.join(cardAssetDir, fileName);
-  fs.writeFileSync(filePath, buffer, { mode: 0o600 });
+function cleanOssPrefix(value) {
+  return String(value || defaultState.ossSettings.prefix)
+    .split("/")
+    .map((part) => safeObjectPart(part, "jojo"))
+    .filter(Boolean)
+    .join("/")
+    || defaultState.ossSettings.prefix;
+}
+
+function resolveOssPrefix(saved = {}) {
+  const savedPrefix = String(saved.prefix || "").trim();
+  if (savedPrefix && savedPrefix !== defaultState.ossSettings.prefix) return cleanOssPrefix(savedPrefix);
+  return cleanOssPrefix(process.env.OSS_PREFIX || savedPrefix || defaultState.ossSettings.prefix);
+}
+
+function normalizeOssHost(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/\/.*$/, "")
+    .replace(/\/+$/, "");
+}
+
+function localOssConfigCandidates() {
+  const home = process.env.HOME || "";
+  const customPaths = String(process.env.JOJO_OSS_CONFIG_PATH || process.env.CYNADU_OSS_CONFIG_PATH || "")
+    .split(path.delimiter)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((filePath, index) => ({ label: `自定义 OSS 配置 ${index + 1}`, filePath }));
+  const builtIns = [
+    { label: "Cynadu Prism 设置", filePath: path.join(home, "Cursor", "cynadu-platform", "apps", "prism", "config", "settings.json") },
+    { label: "Cynadu Platform 设置", filePath: path.join(home, "Cursor", "cynadu-platform", "apps", "platform", "config", "settings.json") }
+  ];
+  const seen = new Set();
+  return [...customPaths, ...builtIns].filter((candidate) => {
+    const normalized = path.normalize(candidate.filePath);
+    if (seen.has(normalized)) return false;
+    seen.add(normalized);
+    candidate.filePath = normalized;
+    return true;
+  });
+}
+
+function normalizeLocalOssSettings(settings = {}) {
   return {
-    slot,
-    name: String(body.fileName || `Card ${slot + 1}`).slice(0, 120),
-    src: `/api/card-cottage/assets/${encodeURIComponent(fileName)}`,
+    provider: "aliyun",
+    region: String(settings.ossRegion || settings.region || "").trim(),
+    endpoint: String(settings.ossEndpoint || settings.endpoint || "").trim(),
+    bucket: String(settings.ossBucket || settings.bucket || "").trim(),
+    accessKeyId: String(settings.ossAccessKeyId || settings.accessKeyId || "").trim(),
+    accessKeySecret: String(settings.ossAccessKeySecret || settings.accessKeySecret || "").trim(),
+    customDomain: String(settings.ossCustomDomain || settings.customDomain || "").trim(),
+    prefix: cleanOssPrefix(settings.ossPrefix || settings.prefix || defaultState.ossSettings.prefix),
+    useSsl: true
+  };
+}
+
+function publicLocalOssCandidate(candidate) {
+  const status = {
+    label: candidate.label,
+    exists: false,
+    readable: false,
+    complete: false,
+    fields: {
+      region: false,
+      endpoint: false,
+      bucket: false,
+      customDomain: false,
+      accessKeyId: false,
+      accessKeySecret: false
+    }
+  };
+  try {
+    status.exists = fs.existsSync(candidate.filePath);
+    if (!status.exists) return status;
+    const settings = normalizeLocalOssSettings(JSON.parse(fs.readFileSync(candidate.filePath, "utf8")));
+    status.readable = true;
+    status.fields = {
+      region: Boolean(settings.region),
+      endpoint: Boolean(settings.endpoint),
+      bucket: Boolean(settings.bucket),
+      customDomain: Boolean(settings.customDomain),
+      accessKeyId: Boolean(settings.accessKeyId),
+      accessKeySecret: Boolean(settings.accessKeySecret)
+    };
+    status.complete = Boolean(settings.bucket && (settings.region || settings.endpoint) && settings.accessKeyId && settings.accessKeySecret);
+  } catch {
+    status.readable = false;
+  }
+  return status;
+}
+
+function localOssConfigStatus() {
+  const candidates = localOssConfigCandidates().map(publicLocalOssCandidate);
+  return {
+    ok: true,
+    importable: candidates.some((candidate) => candidate.complete),
+    preferred: candidates.find((candidate) => candidate.complete)?.label || "",
+    candidates
+  };
+}
+
+function importLocalOssConfig() {
+  for (const candidate of localOssConfigCandidates()) {
+    try {
+      if (!fs.existsSync(candidate.filePath)) continue;
+      const settings = normalizeLocalOssSettings(JSON.parse(fs.readFileSync(candidate.filePath, "utf8")));
+      if (!(settings.bucket && (settings.region || settings.endpoint) && settings.accessKeyId && settings.accessKeySecret)) continue;
+      const state = readState();
+      const current = state.ossSettings || {};
+      state.ossSettings = {
+        ...defaultState.ossSettings,
+        ...current,
+        ...settings,
+        prefix: current.prefix || settings.prefix || defaultState.ossSettings.prefix,
+        useSsl: true
+      };
+      writeState(state);
+      return {
+        ok: true,
+        source: candidate.label,
+        status: localOssConfigStatus(),
+        state: publicState(state, { lite: true })
+      };
+    } catch {
+      continue;
+    }
+  }
+  throw new Error("没有找到完整的本机 Cynadu/Prism OSS 配置。");
+}
+
+function getOssConfig() {
+  const saved = readState().ossSettings || {};
+  const cfg = {
+    provider: saved.provider || "aliyun",
+    region: saved.region || process.env.OSS_REGION || "",
+    endpoint: saved.endpoint || process.env.OSS_ENDPOINT || "",
+    bucket: saved.bucket || process.env.OSS_BUCKET || "",
+    accessKeyId: saved.accessKeyId || process.env.OSS_ACCESS_KEY_ID || "",
+    accessKeySecret: saved.accessKeySecret || process.env.OSS_ACCESS_KEY_SECRET || "",
+    customDomain: saved.customDomain || process.env.OSS_CUSTOM_DOMAIN || "",
+    prefix: resolveOssPrefix(saved),
+    useSsl: saved.useSsl !== false
+  };
+  if (cfg.provider !== "aliyun") throw new Error("当前只支持阿里云 OSS。");
+  if (!cfg.bucket || !cfg.accessKeyId || !cfg.accessKeySecret) {
+    throw new Error("OSS 尚未配置完整：请在主页齿轮填写 Bucket、AccessKey ID 和 AccessKey Secret。");
+  }
+  const regionHost = cfg.region ? `${cfg.region.startsWith("oss-") ? cfg.region : "oss-" + cfg.region}.aliyuncs.com` : "";
+  const endpointHost = normalizeOssHost(cfg.endpoint || regionHost);
+  if (!endpointHost) throw new Error("OSS 尚未配置 Endpoint 或 Region。");
+  const bucketHost = endpointHost.startsWith(`${cfg.bucket}.`) ? endpointHost : `${cfg.bucket}.${endpointHost}`;
+  const protocol = cfg.useSsl ? "https" : "http";
+  return {
+    ...cfg,
+    endpointHost,
+    bucketHost,
+    uploadOrigin: `${protocol}://${bucketHost}`,
+    publicOrigin: cfg.customDomain ? `${protocol}://${normalizeOssHost(cfg.customDomain)}` : `${protocol}://${bucketHost}`
+  };
+}
+
+function encodeOssObjectKey(objectKey) {
+  return String(objectKey || "").split("/").map(encodeURIComponent).join("/");
+}
+
+function signOssReadUrl(objectKey, config = null, expiresSec = 7 * 24 * 60 * 60) {
+  const key = String(objectKey || "").trim();
+  if (!key) return "";
+  const cfg = config || getOssConfig();
+  const expires = Math.floor(Date.now() / 1000) + Math.min(Math.max(Number(expiresSec) || 86400, 60), 7 * 24 * 60 * 60);
+  const canonicalResource = `/${cfg.bucket}/${key}`;
+  const signature = crypto
+    .createHmac("sha1", cfg.accessKeySecret)
+    .update(`GET\n\n\n${expires}\n${canonicalResource}`)
+    .digest("base64");
+  return `${cfg.uploadOrigin}/${encodeOssObjectKey(key)}?OSSAccessKeyId=${encodeURIComponent(cfg.accessKeyId)}&Expires=${expires}&Signature=${encodeURIComponent(signature)}`;
+}
+
+function publicOssImageRecord(record, field, config) {
+  if (!record || typeof record !== "object") return record;
+  if (record.storage !== "oss" || !record.objectKey) return record;
+  try {
+    return { ...record, [field]: signOssReadUrl(record.objectKey, config) };
+  } catch {
+    return { ...record };
+  }
+}
+
+function applySignedOssUrlsToPublicState(state) {
+  let config = null;
+  try {
+    config = getOssConfig();
+  } catch {
+    return state;
+  }
+  if (state.homeBackground) {
+    state.homeBackground = publicOssImageRecord(state.homeBackground, "src", config);
+  }
+  if (Array.isArray(state.homeBackgroundPresets)) {
+    state.homeBackgroundPresets = state.homeBackgroundPresets.map((preset) => publicOssImageRecord(preset, "src", config));
+  }
+  if (Array.isArray(state.gallery)) {
+    state.gallery = state.gallery.map((art) => publicOssImageRecord(art, "image", config));
+  }
+  if (state.cardCottage && Array.isArray(state.cardCottage.slots)) {
+    state.cardCottage = {
+      ...state.cardCottage,
+      slots: state.cardCottage.slots.map((slot) => slot ? publicOssImageRecord(slot, "src", config) : slot)
+    };
+  }
+  return state;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableOssError(error) {
+  return /ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|socket|timeout|超时|status -[12]/i.test(error?.message || String(error || ""));
+}
+
+function ossRequestOnce(method, objectKey, buffer, mime) {
+  const config = getOssConfig();
+  const encodedKey = objectKey.split("/").map(encodeURIComponent).join("/");
+  const date = new Date().toUTCString();
+  const contentType = mime || "";
+  const canonicalResource = `/${config.bucket}/${objectKey}`;
+  const signature = crypto
+    .createHmac("sha1", config.accessKeySecret)
+    .update(`${method}\n\n${contentType}\n${date}\n${canonicalResource}`)
+    .digest("base64");
+  const headers = {
+    Date: date,
+    Authorization: `OSS ${config.accessKeyId}:${signature}`
+  };
+  if (contentType) headers["Content-Type"] = contentType;
+  if (buffer) {
+    headers["Content-Length"] = buffer.length;
+    headers["Cache-Control"] = "public, max-age=31536000";
+  }
+  return new Promise((resolve, reject) => {
+    const client = config.useSsl === false ? http : https;
+    const request = client.request({
+      method,
+      hostname: config.bucketHost,
+      path: `/${encodedKey}`,
+      headers,
+      family: 4,
+      timeout: 120000
+    }, (response) => {
+      let text = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk) => {
+        text += chunk;
+        if (text.length > 2000) text = text.slice(0, 2000);
+      });
+      response.on("end", () => {
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          resolve({ config, status: response.statusCode });
+        } else {
+          reject(new Error(`OSS ${method} 返回 ${response.statusCode}: ${text || response.statusMessage || "unknown"}`));
+        }
+      });
+    });
+    request.on("timeout", () => request.destroy(new Error("OSS 请求超时。")));
+    request.on("error", reject);
+    if (buffer) request.write(buffer);
+    request.end();
+  });
+}
+
+async function ossRequest(method, objectKey, buffer, mime) {
+  let lastError = null;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    if (attempt > 0) await sleep(600 * attempt);
+    try {
+      return await ossRequestOnce(method, objectKey, buffer, mime);
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableOssError(error)) break;
+    }
+  }
+  throw lastError || new Error("OSS 请求失败。");
+}
+
+async function uploadImageToOss(body) {
+  const { mime, buffer } = parseImageDataUrl(body.dataUrl || body.image || "");
+  const folder = safeObjectPart(body.folder || "uploads", "uploads");
+  const ext = imageExtensionForMime(mime).replace(".", "") || "jpg";
+  const stem = safeObjectPart(path.basename(String(body.fileName || body.name || "image"), path.extname(String(body.fileName || body.name || ""))), "image");
+  const now = new Date();
+  const datePath = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const objectKey = `${getOssConfig().prefix}/${folder}/${datePath}/${Date.now()}-${crypto.randomBytes(4).toString("hex")}-${stem}.${ext}`;
+  const result = await ossRequest("PUT", objectKey, buffer, mime);
+  const url = signOssReadUrl(objectKey, result.config);
+  return {
+    name: String(body.fileName || body.name || stem).slice(0, 120),
+    src: url,
+    url,
+    objectKey,
+    storage: "oss",
+    mime,
+    size: buffer.length,
     updatedAt: new Date().toISOString()
   };
+}
+
+async function deleteOssObject(objectKey) {
+  const key = String(objectKey || "").trim();
+  if (!key) return { ok: true };
+  await ossRequest("DELETE", key, null, "");
+  return { ok: true };
+}
+
+const homeBackgroundPresetDefaults = [
+  { id: "robot-cheer", label: "机器人小巴", src: "./assets/jojo-retro-hero-robot-cheer.png" },
+  { id: "storybook", label: "故事小巴", src: "./assets/jojo-retro-hero-with-jojo.png" },
+  { id: "ukulele", label: "尤克里里", src: "./assets/jojo-retro-hero-cartoon-ukulele.png" },
+  { id: "classic", label: "经典实验室", src: "./assets/jojo-retro-hero.png" }
+];
+
+function normalizeHomeBackgroundPresetsForServer(presets = []) {
+  const byId = new Map(Array.isArray(presets) ? presets.map((item) => [item?.id, item]) : []);
+  return homeBackgroundPresetDefaults.map((fallback) => {
+    const saved = byId.get(fallback.id) || {};
+    return {
+      ...fallback,
+      src: saved.src || fallback.src,
+      objectKey: saved.objectKey || "",
+      storage: saved.storage || (saved.objectKey ? "oss" : "built-in"),
+      updatedAt: saved.updatedAt || ""
+    };
+  });
+}
+
+function sourceNeedsOss(src) {
+  const value = String(src || "");
+  return value.startsWith("data:") || value.startsWith("/api/card-cottage/assets/");
+}
+
+function normalizeCardCottageSlotsForServer(slots = []) {
+  return Array.from({ length: 50 }, (_, index) => {
+    const slot = Array.isArray(slots) ? slots[index] : null;
+    if (!slot?.src) return null;
+    return {
+      name: String(slot.name || `Card ${index + 1}`),
+      src: String(slot.src),
+      updatedAt: slot.updatedAt || "",
+      objectKey: slot.objectKey ? String(slot.objectKey) : "",
+      storage: slot.storage ? String(slot.storage) : "",
+      mime: slot.mime ? String(slot.mime) : "",
+      size: Number(slot.size || 0) || 0
+    };
+  });
+}
+
+function ossMigrationStatusForState(state) {
+  const presets = normalizeHomeBackgroundPresetsForServer(state.homeBackgroundPresets);
+  const presetPending = presets.filter((preset) => preset.storage !== "oss" || !preset.objectKey).length;
+  const galleryItems = Array.isArray(state.gallery) ? state.gallery : [];
+  const galleryPending = galleryItems.filter((art) => sourceNeedsOss(art?.image)).length;
+  const cardSlots = normalizeCardCottageSlotsForServer(state.cardCottage?.slots).filter((slot) => slot?.src);
+  const cardPending = cardSlots.filter((slot) => sourceNeedsOss(slot.src)).length;
+  const customBackgroundPending = state.homeBackground?.mode === "custom" && sourceNeedsOss(state.homeBackground.src) ? 1 : 0;
+  const pending = presetPending + galleryPending + cardPending + customBackgroundPending;
+  return {
+    pending,
+    presetPending,
+    presetTotal: presets.length,
+    galleryPending,
+    galleryTotal: galleryItems.length,
+    cardPending,
+    cardTotal: cardSlots.length,
+    customBackgroundPending,
+    customBackgroundTotal: state.homeBackground?.mode === "custom" ? 1 : 0
+  };
+}
+
+function deploymentStatusForState(state) {
+  const migration = ossMigrationStatusForState(state);
+  const ossSettings = publicOssSettingsForState(state);
+  const ossConfigured = Boolean(
+    ossSettings.bucket
+    && (ossSettings.endpoint || ossSettings.region)
+    && ossSettings.hasAccessKeyId
+    && ossSettings.hasAccessKeySecret
+  );
+  const songHistory = Array.isArray(state.songHistory) ? state.songHistory.filter((item) => item?.analysis) : [];
+  const galleryItems = Array.isArray(state.gallery) ? state.gallery : [];
+  const cardSlots = normalizeCardCottageSlotsForServer(state.cardCottage?.slots).filter((slot) => slot?.src);
+  const issues = [];
+  if (!ossConfigured) issues.push("OSS 尚未配置完整。");
+  if (migration.pending) issues.push(`还有 ${migration.pending} 项图片资源需要同步到 OSS。`);
+  return {
+    ok: true,
+    internetReady: ossConfigured && migration.pending === 0,
+    checkedAt: new Date().toISOString(),
+    state: {
+      privateStateFile: fs.existsSync(dataFile),
+      songHistoryCount: songHistory.length,
+      galleryCount: galleryItems.length,
+      cardSlotCount: cardSlots.length
+    },
+    oss: {
+      provider: ossSettings.provider,
+      configured: ossConfigured,
+      uploadsReady: ossConfigured,
+      bucket: ossSettings.bucket,
+      region: ossSettings.region,
+      endpoint: ossSettings.endpoint,
+      prefix: ossSettings.prefix,
+      hasCustomDomain: Boolean(ossSettings.customDomain),
+      hasAccessKeyId: ossSettings.hasAccessKeyId,
+      hasAccessKeySecret: ossSettings.hasAccessKeySecret
+    },
+    migration,
+    issues
+  };
+}
+
+function dataUrlFromFile(filePath) {
+  const normalizedPath = path.normalize(filePath);
+  if (!normalizedPath.startsWith(publicDir) && !normalizedPath.startsWith(cardAssetDir)) {
+    throw new Error("图片路径不在允许范围内。");
+  }
+  const data = fs.readFileSync(normalizedPath);
+  const mime = mimeTypes[path.extname(normalizedPath)] || "image/jpeg";
+  if (!String(mime).startsWith("image/")) throw new Error("文件不是图片。");
+  return `data:${String(mime).split(";")[0]};base64,${data.toString("base64")}`;
+}
+
+function assetDataUrlFromSrc(src) {
+  const value = String(src || "");
+  if (/^data:image\/[^;]+;base64,/i.test(value)) return value;
+  if (value.startsWith("/api/card-cottage/assets/")) {
+    const filePath = cardAssetPathFromSrc(value);
+    if (!filePath) throw new Error("Card Cottage 本地图片路径无效。");
+    return dataUrlFromFile(filePath);
+  }
+  const relative = value.replace(/^\.\//, "");
+  const filePath = path.normalize(path.join(publicDir, relative));
+  if (!filePath.startsWith(publicDir)) throw new Error("内置图片路径无效。");
+  return dataUrlFromFile(filePath);
+}
+
+async function runOssImageMigration() {
+  const state = readState();
+  await testOssUpload();
+  let migrated = 0;
+  let skipped = 0;
+  const presets = normalizeHomeBackgroundPresetsForServer(state.homeBackgroundPresets);
+  for (let index = 0; index < presets.length; index += 1) {
+    const preset = presets[index];
+    if (preset.storage === "oss" && preset.objectKey) {
+      skipped += 1;
+      continue;
+    }
+    const fallback = homeBackgroundPresetDefaults.find((item) => item.id === preset.id) || preset;
+    const upload = await uploadImageToOss({
+      dataUrl: assetDataUrlFromSrc(fallback.src),
+      fileName: `home-preset-${preset.id}.jpg`,
+      folder: "home-backgrounds"
+    });
+    presets[index] = {
+      ...preset,
+      src: upload.src,
+      objectKey: upload.objectKey,
+      storage: "oss",
+      updatedAt: upload.updatedAt
+    };
+    migrated += 1;
+  }
+  state.homeBackgroundPresets = presets;
+  if (state.homeBackground?.mode !== "custom") {
+    const activePreset = presets.find((preset) => preset.id === state.homeBackground?.preset) || presets[0];
+    state.homeBackground = {
+      ...defaultState.homeBackground,
+      ...state.homeBackground,
+      preset: activePreset.id,
+      src: activePreset.src,
+      objectKey: activePreset.objectKey || "",
+      storage: activePreset.storage || "",
+      updatedAt: activePreset.updatedAt || ""
+    };
+  }
+
+  const galleryItems = Array.isArray(state.gallery) ? state.gallery : [];
+  for (const art of galleryItems) {
+    if (!sourceNeedsOss(art?.image)) {
+      skipped += 1;
+      continue;
+    }
+    const upload = await uploadImageToOss({
+      dataUrl: assetDataUrlFromSrc(art.image),
+      fileName: `${art.title || "artwork"}.jpg`,
+      folder: "art-gallery"
+    });
+    art.image = upload.src;
+    art.objectKey = upload.objectKey;
+    art.storage = "oss";
+    migrated += 1;
+  }
+  state.gallery = galleryItems;
+
+  const slots = normalizeCardCottageSlotsForServer(state.cardCottage?.slots);
+  for (let index = 0; index < slots.length; index += 1) {
+    const slot = slots[index];
+    if (!slot?.src || !sourceNeedsOss(slot.src)) continue;
+    const previousSrc = slot.src;
+    const upload = await uploadImageToOss({
+      dataUrl: assetDataUrlFromSrc(slot.src),
+      fileName: slot.name || `card-slot-${index + 1}.jpg`,
+      folder: "card-cottage"
+    });
+    slots[index] = { ...slot, ...upload, name: slot.name || upload.name };
+    if (previousSrc.startsWith("/api/card-cottage/assets/")) deleteCardAssetSrc(previousSrc);
+    migrated += 1;
+  }
+  state.cardCottage = { ...(state.cardCottage || {}), slots };
+
+  if (state.homeBackground?.mode === "custom" && sourceNeedsOss(state.homeBackground.src)) {
+    const upload = await uploadImageToOss({
+      dataUrl: assetDataUrlFromSrc(state.homeBackground.src),
+      fileName: state.homeBackground.name || "home-background.jpg",
+      folder: "home-backgrounds"
+    });
+    state.homeBackground = {
+      ...state.homeBackground,
+      src: upload.src,
+      objectKey: upload.objectKey,
+      storage: "oss",
+      mime: upload.mime,
+      size: upload.size,
+      updatedAt: upload.updatedAt
+    };
+    migrated += 1;
+  }
+
+  writeState(state);
+  return {
+    ok: true,
+    migrated,
+    skipped,
+    status: ossMigrationStatusForState(state),
+    state: publicState(state, { lite: true })
+  };
+}
+
+function publicUrlReachable(url) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+    let parsed;
+    try {
+      parsed = new URL(url);
+    } catch {
+      finish({ ok: false, status: 0, error: "公网 URL 无效。" });
+      return;
+    }
+    const client = parsed.protocol === "http:" ? http : https;
+    const request = client.request({
+      method: "GET",
+      hostname: parsed.hostname,
+      path: `${parsed.pathname}${parsed.search}`,
+      headers: { Range: "bytes=0-0" },
+      timeout: 15000
+    }, (response) => {
+      response.resume();
+      response.on("end", () => finish({ ok: response.statusCode >= 200 && response.statusCode < 400, status: response.statusCode || 0 }));
+    });
+    request.on("timeout", () => {
+      request.destroy();
+      finish({ ok: false, status: 0, error: "公网读取超时。" });
+    });
+    request.on("error", (error) => finish({ ok: false, status: 0, error: error.message }));
+    request.end();
+  });
+}
+
+async function testOssUpload() {
+  const tinyPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
+  const upload = await uploadImageToOss({ dataUrl: tinyPng, fileName: "jojo-oss-test.png", folder: "probe" });
+  let publicRead = { ok: false, status: 0 };
+  try {
+    publicRead = await publicUrlReachable(upload.url);
+  } finally {
+    try {
+      await deleteOssObject(upload.objectKey);
+    } catch {}
+  }
+  return {
+    ok: true,
+    uploadOk: true,
+    publicReadable: Boolean(publicRead.ok),
+    publicStatus: publicRead.status || 0,
+    publicError: publicRead.error || "",
+    message: publicRead.ok
+      ? "OSS 上传、公开读取和清理测试通过。"
+      : `OSS 上传成功，但公开读取失败${publicRead.status ? `（HTTP ${publicRead.status}）` : ""}。请确认 Bucket 读权限或自定义域名/CDN。`
+  };
+}
+
+function saveCardCottageUpload(body) {
+  const slot = Number(body.slot);
+  if (!Number.isInteger(slot) || slot < 0 || slot >= 50) throw new Error("Invalid Card Cottage slot.");
+  return uploadImageToOss({
+    ...body,
+    folder: "card-cottage",
+    fileName: body.fileName || `card-slot-${String(slot + 1).padStart(2, "0")}`
+  }).then((upload) => ({
+    ...upload,
+    slot,
+    name: String(body.fileName || `Card ${slot + 1}`).slice(0, 120)
+  }));
 }
 
 function serveCardAsset(req, res) {
@@ -474,17 +1160,18 @@ function serveStatic(req, res) {
 
 const server = http.createServer(async (req, res) => {
   try {
+    const requestUrl = new URL(req.url, `http://${req.headers.host}`);
     if (req.method === "OPTIONS") {
       sendCorsPreflight(res);
       return;
     }
-    if (req.url.startsWith("/api/state") && req.method === "GET") {
-      sendJson(res, 200, publicState(readState()));
+    if (requestUrl.pathname === "/api/state" && req.method === "GET") {
+      sendJson(res, 200, publicState(readState(), { lite: requestUrl.searchParams.get("lite") === "1" }));
       return;
     }
-    if (req.url.startsWith("/api/state") && req.method === "POST") {
+    if (requestUrl.pathname === "/api/state" && req.method === "POST") {
       const patch = await readJson(req);
-      const data = mergeStatePatch(patch);
+      const data = mergeStatePatch(patch, { lite: true });
       const patchKeys = Object.keys(patch);
       if (patch.wordProgressPatch && patchKeys.length === 1) {
         sendJson(res, 200, { wordProgressPatch: patch.wordProgressPatch });
@@ -493,12 +1180,58 @@ const server = http.createServer(async (req, res) => {
       }
       return;
     }
+    if (requestUrl.pathname === "/api/gallery" && req.method === "GET") {
+      sendJson(res, 200, { gallery: publicState(readState()).gallery || [] });
+      return;
+    }
+    if (requestUrl.pathname === "/api/song-history" && req.method === "GET") {
+      const songHistory = (publicState(readState()).songHistory || []).filter((item) => item?.analysis).slice(0, 20);
+      sendJson(res, 200, { songHistory });
+      return;
+    }
+    if (requestUrl.pathname === "/api/word-progress" && req.method === "GET") {
+      sendJson(res, 200, { wordProgress: readState().wordProgress || {} });
+      return;
+    }
+    if (requestUrl.pathname === "/api/deployment/status" && req.method === "GET") {
+      sendJson(res, 200, deploymentStatusForState(readState()));
+      return;
+    }
+    if (requestUrl.pathname === "/api/oss/local-configs" && req.method === "GET") {
+      sendJson(res, 200, localOssConfigStatus());
+      return;
+    }
+    if (requestUrl.pathname === "/api/oss/import-local-config" && req.method === "POST") {
+      sendJson(res, 200, importLocalOssConfig());
+      return;
+    }
+    if (requestUrl.pathname === "/api/oss/upload-image" && req.method === "POST") {
+      sendJson(res, 200, await uploadImageToOss(await readJson(req)));
+      return;
+    }
+    if (requestUrl.pathname === "/api/oss/test" && req.method === "POST") {
+      sendJson(res, 200, await testOssUpload());
+      return;
+    }
+    if (requestUrl.pathname === "/api/oss/migration-status" && req.method === "GET") {
+      sendJson(res, 200, ossMigrationStatusForState(readState()));
+      return;
+    }
+    if (requestUrl.pathname === "/api/oss/migrate-images" && req.method === "POST") {
+      sendJson(res, 200, await runOssImageMigration());
+      return;
+    }
+    if (requestUrl.pathname === "/api/oss/delete" && req.method === "POST") {
+      const body = await readJson(req);
+      sendJson(res, 200, await deleteOssObject(body.objectKey));
+      return;
+    }
     if (req.url.startsWith("/api/minimax/chat") && req.method === "POST") {
       sendJson(res, 200, await proxyMinimax(await readJson(req)));
       return;
     }
     if (req.url.startsWith("/api/card-cottage/upload") && req.method === "POST") {
-      sendJson(res, 200, saveCardCottageUpload(await readJson(req)));
+      sendJson(res, 200, await saveCardCottageUpload(await readJson(req)));
       return;
     }
     if (req.url.startsWith("/api/card-cottage/delete") && req.method === "POST") {
