@@ -45,6 +45,7 @@ Primary use cases:
 - App settings should use the unified top-right gear in the top bar. Do not add separate text settings buttons inside each module title area.
 - The unified settings gear must match the neighboring top-bar visual-mode button in size, border, radius, background, and shadow.
 - When the home view already has the unified gear, do not add an extra "主页设置" button inside the poster or content area.
+- The home view may show a discreet app version number in the bottom-right corner of the poster; keep it small, low-contrast, and non-interactive.
 - The main top-bar brand should read horizontally as "JOJO LAB · PLAY HARD, THINK SHARP." after the logo. If using a handwritten slogan asset, keep it transparent and recolor it to the current slogan color rather than embedding a mismatched background.
 - On child app views, keep the unified top bar logo, replace the "JOJO LAB" wordmark with the active app name in the same uppercase wordmark style, and keep the "PLAY HARD, THINK SHARP." slogan visible in the top bar.
 - Child app section eyebrows and explanatory subtitles such as "English Songs" and "Jojo 喜欢的英文歌大模型精读" should not be shown inside the app surface; the unified top bar owns the app title.
