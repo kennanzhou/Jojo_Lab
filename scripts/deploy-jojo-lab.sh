@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-SSH_KEY="${JOJO_SSH_KEY:-$ROOT_DIR/../.ssh/cynadu-ssh.pem}"
+SSH_KEY="${JOJO_SSH_KEY:-/Users/nan.studio/Documents/cynadu-ssh.pem}"
 SSH_HOST="${JOJO_SSH_HOST:-root@47.86.175.205}"
 REMOTE_DIR="${JOJO_REMOTE_DIR:-/opt/jojo-lab}"
 
