@@ -4,6 +4,7 @@
 # Local private state. May include API settings and user-created data.
 work/private/
 scripts/cynadu-ssh.pem
+outputs/build-meta.json
 
 # Old local backup, not part of the shipped app.
 _backup_old_phonics_20260614/

@@ -3,15 +3,17 @@ const https = require("https");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
-const { execFile } = require("child_process");
+const { execFile, execFileSync } = require("child_process");
 
 const root = __dirname;
 const publicDir = path.join(root, "outputs");
 const dataDir = path.join(root, "work", "private");
 const dataFile = path.join(dataDir, "jojo-state.json");
+const buildMetaFile = path.join(publicDir, "build-meta.json");
 const cardAssetDir = path.join(dataDir, "card-cottage");
 const port = Number(process.env.PORT || 4173);
 const host = process.env.HOST || "127.0.0.1";
+const appBaseVersion = process.env.JOJO_APP_VERSION || "1.0.1";
 const maxJsonBodyBytes = 32 * 1024 * 1024;
 const maxImageUploadBytes = 14 * 1024 * 1024;
 const authCookieName = "jojo_lab_auth";
@@ -28,6 +30,7 @@ const loginMaxLockMs = 5 * 60 * 1000;
 const loginAttempts = new Map();
 const demoSessions = new Map();
 let authSecretCache = "";
+let appVersionMetaCache = null;
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -41,6 +44,63 @@ const mimeTypes = {
   ".webp": "image/webp",
   ".md": "text/markdown; charset=utf-8"
 };
+
+function htmlEscape(value) {
+  return String(value).replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#039;"
+  })[char]);
+}
+
+function safeVersionPart(value, fallback = "local") {
+  const text = String(value || "").trim();
+  return /^[A-Za-z0-9._+-]+$/.test(text) ? text : fallback;
+}
+
+function readJsonFileSafe(filePath) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function gitOutput(args) {
+  try {
+    return execFileSync("git", args, {
+      cwd: root,
+      encoding: "utf8",
+      timeout: 1200,
+      stdio: ["ignore", "pipe", "ignore"]
+    }).trim();
+  } catch {
+    return "";
+  }
+}
+
+function appVersionMeta() {
+  if (appVersionMetaCache) return appVersionMetaCache;
+  const savedMeta = readJsonFileSafe(buildMetaFile) || {};
+  const fullSha = safeVersionPart(savedMeta.gitSha || gitOutput(["rev-parse", "HEAD"]), "");
+  const shortSha = safeVersionPart(savedMeta.shortSha || gitOutput(["rev-parse", "--short=12", "HEAD"]) || fullSha.slice(0, 12), "");
+  const buildId = safeVersionPart(savedMeta.buildId || shortSha || "local");
+  const version = safeVersionPart(savedMeta.version || appBaseVersion, appBaseVersion);
+  const builtAt = String(savedMeta.builtAt || gitOutput(["show", "-s", "--format=%cI", "HEAD"]) || new Date().toISOString());
+  const displayVersion = buildId && buildId !== "local" ? `${version}+${buildId.slice(0, 7)}` : version;
+  appVersionMetaCache = {
+    version,
+    displayVersion,
+    buildId,
+    gitSha: fullSha,
+    shortSha,
+    builtAt,
+    cacheToken: safeVersionPart(`${version}-${buildId}`)
+  };
+  return appVersionMetaCache;
+}
 
 const defaultState = {
   wordProgress: {},
@@ -1524,12 +1584,35 @@ function serveStatic(req, res) {
       res.end("Not found");
       return;
     }
+    if (pathname === "/index.html") {
+      const html = renderIndexHtml(data.toString("utf8"));
+      res.writeHead(200, {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-cache"
+      });
+      res.end(html);
+      return;
+    }
     res.writeHead(200, {
       "Content-Type": mimeTypes[path.extname(filePath)] || "application/octet-stream",
       "Cache-Control": "no-cache"
     });
     res.end(data);
   });
+}
+
+function renderIndexHtml(html) {
+  const meta = appVersionMeta();
+  const display = htmlEscape(meta.displayVersion);
+  const title = htmlEscape(`版本 ${meta.displayVersion} · ${meta.builtAt}`);
+  const cacheToken = encodeURIComponent(meta.cacheToken);
+  return html
+    .replace(/styles\.css\?v=[^"]+/g, `styles.css?v=${cacheToken}`)
+    .replace(/app\.js\?v=[^"]+/g, `app.js?v=${cacheToken}`)
+    .replace(
+      /<span class="app-version"[^>]*>[^<]*<\/span>/,
+      `<span class="app-version" data-app-version aria-label="版本 ${display}" title="${title}">${display}</span>`
+    );
 }
 
 function sendAuthRequired(res) {
@@ -1558,6 +1641,10 @@ const server = http.createServer(async (req, res) => {
     }
     if (requestUrl.pathname === "/api/auth/login" && req.method === "POST") {
       await handleAuthLogin(req, res);
+      return;
+    }
+    if (requestUrl.pathname === "/api/version" && req.method === "GET") {
+      sendJson(res, 200, appVersionMeta());
       return;
     }
     if (requestUrl.pathname === "/api/auth/logout" && req.method === "POST") {
