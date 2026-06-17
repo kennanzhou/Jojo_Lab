@@ -1,16 +1,45 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-SSH_KEY="${JOJO_SSH_KEY:-/Users/nan.studio/Documents/cynadu-ssh.pem}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+LOCAL_ENV="$SCRIPT_DIR/deploy.local.env"
+
+if [[ -f "$LOCAL_ENV" ]]; then
+  # shellcheck disable=SC1090
+  source "$LOCAL_ENV"
+fi
+
 SSH_HOST="${JOJO_SSH_HOST:-root@47.86.175.205}"
 REMOTE_DIR="${JOJO_REMOTE_DIR:-/opt/jojo-lab}"
 APP_VERSION="${JOJO_APP_VERSION:-1.0.1}"
 BUILD_META_FILE="$ROOT_DIR/outputs/build-meta.json"
 
-if [[ ! -f "$SSH_KEY" ]]; then
-  echo "SSH key not found: $SSH_KEY" >&2
-  echo "Set JOJO_SSH_KEY to your .pem path if it lives elsewhere." >&2
+resolve_ssh_key() {
+  if [[ -n "${JOJO_SSH_KEY:-}" && -f "${JOJO_SSH_KEY}" ]]; then
+    printf '%s' "$JOJO_SSH_KEY"
+    return 0
+  fi
+  local candidate
+  for candidate in \
+    "$ROOT_DIR/../.ssh/cynadu-ssh.pem" \
+    "$HOME/.ssh/cynadu-ssh.pem"; do
+    if [[ -f "$candidate" ]]; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+if ! SSH_KEY="$(resolve_ssh_key)"; then
+  echo "SSH key not found." >&2
+  echo "Create scripts/deploy.local.env from scripts/deploy.local.env.example" >&2
+  echo "and set JOJO_SSH_KEY to your .pem path." >&2
+  echo "Tried:" >&2
+  echo "  scripts/deploy.local.env -> JOJO_SSH_KEY" >&2
+  echo "  $ROOT_DIR/../.ssh/cynadu-ssh.pem" >&2
+  echo "  $HOME/.ssh/cynadu-ssh.pem" >&2
   exit 1
 fi
 if [[ ! "$APP_VERSION" =~ ^[A-Za-z0-9._+-]+$ ]]; then
@@ -46,6 +75,7 @@ tar czf - \
   --exclude='_backup_old_phonics_20260614' \
   --exclude='.DS_Store' \
   --exclude='*.log' \
+  --exclude='scripts/deploy.local.env' \
   -C "$ROOT_DIR" . | "${SSH_CMD[@]}" "$SSH_HOST" "mkdir -p '$REMOTE_DIR' && tar xzf - -C '$REMOTE_DIR'"
 
 echo "Installing service/nginx configs if present ..."
