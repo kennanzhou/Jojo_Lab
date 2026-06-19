@@ -4954,10 +4954,11 @@ main {
 }
 
 @media (hover: none), (pointer: coarse) {
-  #words .option-grid button:hover {
-    border-color: #e7b4a2 !important;
-    background-color: #fffaf0 !important;
-    color: #c14f32 !important;
+  #words .option-grid button:hover,
+  #words .option-grid button:focus-visible {
+    border-color: var(--line) !important;
+    background-color: #fff !important;
+    color: var(--ink) !important;
   }
 }
 
@@ -4974,9 +4975,49 @@ main {
 #words .word-card {
   display: flex !important;
   align-items: center !important;
+  position: relative;
   --word-prompt-slot-height: clamp(63px, 6.99vw, 99px);
   min-height: 150px !important;
   padding: 20px 28px 22px !important;
+}
+
+.word-difficulty-button {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: grid;
+  width: 52px;
+  height: 52px;
+  min-height: 52px;
+  place-items: center;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: #d94a3a;
+  color: #fff8df;
+  box-shadow: 0 4px 0 rgba(71, 43, 29, 0.22);
+  font-size: 28px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.word-difficulty-button:hover,
+.word-difficulty-button:focus-visible {
+  background: #b9362c;
+  color: #fff8df;
+}
+
+.word-difficulty-button.is-added {
+  background: #8f6f57;
+  color: #fff8df;
+}
+
+.word-difficulty-button:disabled {
+  cursor: default;
+  opacity: 0.82;
+}
+
+.word-difficulty-button[hidden] {
+  display: none;
 }
 
 #words .word-card > div {
@@ -5000,6 +5041,7 @@ main {
 
 #words #wordMeta {
   margin-top: 12px !important;
+  padding-right: 48px;
   transform: none !important;
   font-size: 21px;
   line-height: 1.2;
@@ -6952,6 +6994,14 @@ main,
   width: 20px;
   height: 20px;
   object-fit: contain;
+}
+
+#wordSmallStarTray {
+  padding-left: 8px;
+}
+
+#wordSmallStarTray img + img {
+  margin-left: -8px;
 }
 
 .big-star-tray {

@@ -35266,7 +35266,9 @@ const selectedSongBankIds = new Set();
 let activeTopbarAction = null;
 const maxProgressRows = 6;
 const minWordsPerBank = 10;
-const wordSmallStarsPerBig = 10;
+const wordSmallStarsPerBig = 20;
+const difficultWordBankId = "difficult-words";
+const difficultWordBankTitle = "重难点词库";
 const kanaMasteriesPerSmallStar = 2;
 const kanaSmallStarsPerBig = 12;
 const phonicsSmallStarsPerChallenge = 2;
@@ -35472,6 +35474,7 @@ let selectedBankCache = { key: "", words: [] };
 let wordNextQuestionTimer = null;
 let wordAnswerLocked = false;
 let wordQuestionToken = 0;
+let lastWordQuestionText = "";
 let galleryHydrated = false;
 let cardCottageHydrated = false;
 let songHistoryHydrated = false;
@@ -36135,7 +36138,7 @@ function awardWordMasteryReward() {
   renderWordRewards();
   playStarCue(earned);
   animateWordStarReward(earned);
-  showToast(earned === "big" ? "10 颗 Word Camp 小星合成 1 颗全局大星！" : "单词达到 3 分，获得 1 颗 Word Camp 小星！", "good");
+  showToast(earned === "big" ? "20 颗 Word Camp 小星合成 1 颗全局大星！" : "单词达到 3 分，获得 1 颗 Word Camp 小星！", "good");
 }
 
 function awardKanaMasteryReward(progressKey) {
@@ -36187,6 +36190,68 @@ function saveCustomWordBanks() {
   saveLocalItem("jojoCustomWordBanks", JSON.stringify(state.customWordBanks));
   invalidateWordCaches();
   saveSharedState({ customWordBanks: state.customWordBanks, wordBank: state.wordBank });
+}
+
+function normalizedWordText(word) {
+  return String(word?.word || "").trim().toLowerCase();
+}
+
+function ensureDifficultWordBank() {
+  let bank = state.customWordBanks.find((item) => item.id === difficultWordBankId);
+  if (!bank) {
+    bank = {
+      id: difficultWordBankId,
+      title: difficultWordBankTitle,
+      source: "Word Camp",
+      importedAt: new Date().toISOString(),
+      words: []
+    };
+    state.customWordBanks.push(bank);
+  }
+  bank.title = bank.title || difficultWordBankTitle;
+  bank.source = bank.source || "Word Camp";
+  bank.words = Array.isArray(bank.words) ? bank.words : [];
+  state.deletedWordBanks = state.deletedWordBanks.filter((id) => id !== difficultWordBankId);
+  wordBankLabels[difficultWordBankId] = bank.title;
+  return bank;
+}
+
+function wordInDifficultBank(word = state.word) {
+  const key = normalizedWordText(word);
+  if (!key) return false;
+  const bank = state.customWordBanks.find((item) => item.id === difficultWordBankId);
+  return Array.isArray(bank?.words) && bank.words.some((item) => normalizedWordText(item) === key);
+}
+
+function updateDifficultWordButton() {
+  const button = $("#markDifficultWord");
+  if (!button) return;
+  const hasWord = Boolean(state.word?.word);
+  const card = $("#words .word-card");
+  const isStatus = Boolean(card?.classList.contains("word-card-status"));
+  const isAdded = hasWord && wordInDifficultBank(state.word);
+  button.hidden = !hasWord || isStatus;
+  button.disabled = !hasWord || isStatus || isAdded;
+  button.classList.toggle("is-added", Boolean(isAdded));
+  button.setAttribute("aria-pressed", String(Boolean(isAdded)));
+  button.setAttribute("aria-label", isAdded ? "已加入重难点词库" : "加入重难点词库");
+  button.title = isAdded ? "已加入重难点词库" : "加入重难点词库";
+}
+
+function addCurrentWordToDifficultBank() {
+  if (!state.word?.word) return;
+  const bank = ensureDifficultWordBank();
+  const key = normalizedWordText(state.word);
+  const existing = bank.words.some((word) => normalizedWordText(word) === key);
+  if (!existing) {
+    bank.words.push({
+      ...cloneWordForCustomBank(state.word),
+      addedAt: new Date().toISOString()
+    });
+  }
+  persistWordBankCatalog();
+  updateDifficultWordButton();
+  showToast(existing ? "这个单词已经在重难点词库里。" : `已加入重难点词库：${state.word.word}`, existing ? "bad" : "good");
 }
 
 function installCustomWordBankLabels() {
@@ -36505,7 +36570,7 @@ function rawWordBankSize(bank) {
 function repairCurrentWordBank() {
   const bank = currentWordBank();
   if (bank === "all") return bank;
-  const usable = wordBankLabels[bank] && !isWordBankDeleted(bank) && rawWordBankSize(bank) >= minWordsPerBank;
+  const usable = wordBankLabels[bank] && !isWordBankDeleted(bank) && isValidWordBank(bank);
   if (usable) return bank;
   state.wordBank = wordBankLabels["ket-official"] && rawWordBankSize("ket-official") >= minWordsPerBank ? "ket-official" : "all";
   saveLocalItem("jojoWordBank", state.wordBank);
@@ -36522,7 +36587,12 @@ function wordBankSize(bank) {
   return rawWordBankSize(bank);
 }
 
+function isDifficultWordBank(bank) {
+  return bank === difficultWordBankId;
+}
+
 function isValidWordBank(bank) {
+  if (isDifficultWordBank(bank)) return rawWordBankSize(bank) > 0;
   return bank === "all" || wordBankSize(bank) >= minWordsPerBank;
 }
 
@@ -37531,6 +37601,7 @@ function applySharedState(data) {
     renderKanaRewards();
     renderPhonicsRewards();
   }
+  updateDifficultWordButton();
 }
 
 async function loadSharedState() {
@@ -37894,12 +37965,21 @@ function renderKanaProgress() {
 function renderOptions(selector, options, correct, handler) {
   const container = $(selector);
   if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+  container.classList.remove("has-selection");
   container.innerHTML = options.map((option) => `<button type="button" data-answer="${escapeHtml(option)}">${escapeHtml(option)}</button>`).join("");
   $all(`${selector} button`).forEach((button) => {
+    button.classList.remove("is-active", "is-correct", "is-wrong");
+    button.disabled = false;
     bindTouchPress(button, () => {
       button.blur();
+      container.classList.add("has-selection");
       handler(button.dataset.answer === correct, correct);
     });
+  });
+  requestAnimationFrame(() => {
+    if (container.contains(document.activeElement) && document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
   });
 }
 
@@ -38174,6 +38254,7 @@ function setWordCardMode(mode) {
   const card = $("#words .word-card");
   if (!card) return;
   card.classList.toggle("word-card-spelling", mode === "spelling");
+  card.classList.toggle("word-card-status", mode === "status");
 }
 
 function buildSpellingPuzzle(word) {
@@ -38223,12 +38304,20 @@ function handleSpellingKey(letter, action) {
 
 function meaningChoicesFor(word) {
   const choices = [word.zh];
-  const sourceWords = wordsForSelectedBank().filter((item) => item.zh && item.zh !== word.zh && !String(item.zh).startsWith("KET官方词汇："));
-  const candidates = sample(sourceWords, Math.min(28, sourceWords.length)).map((item) => item.zh);
+  const selectedSourceWords = wordsForSelectedBank().filter((item) => item.zh && item.zh !== word.zh && !String(item.zh).startsWith("KET官方词汇："));
+  const fallbackWords = allWords().filter((item) => item.zh && item.zh !== word.zh && !String(item.zh).startsWith("KET官方词汇："));
+  const sourceWords = selectedSourceWords.length >= 3 ? selectedSourceWords : [...selectedSourceWords, ...fallbackWords];
+  const candidates = sample(sourceWords, Math.min(36, sourceWords.length)).map((item) => item.zh);
   candidates.forEach((meaning) => {
     if (choices.length < 4 && !choices.includes(meaning)) choices.push(meaning);
   });
   return shuffle(choices);
+}
+
+function pickNextWord(pool) {
+  const previous = String(lastWordQuestionText || "").toLowerCase();
+  const candidates = pool.length > 1 ? pool.filter((word) => String(word.word || "").toLowerCase() !== previous) : pool;
+  return sample(candidates.length ? candidates : pool, 1)[0];
 }
 
 function newWordQuestion() {
@@ -38253,12 +38342,14 @@ function newWordQuestion() {
     $("#spellingBox").classList.add("hidden");
     $("#wordFeedback").textContent = todayWords.length ? "太棒了，今天的 Word Camp 完成了。" : "可以换一个词库，或者调整每日单词数量。";
     $("#wordFeedback").className = "feedback good";
+    updateDifficultWordButton();
     renderWordStudyState();
     return;
   }
-  const word = sample(pool, 1)[0];
+  const word = pickNextWord(pool);
   const mode = $("#wordMode").value;
   state.word = word;
+  lastWordQuestionText = word.word || "";
   setWordCardMode(mode);
   $("#wordMeta").textContent = `${word.ipa} · ${word.pos} · ${word.accent || "US"} · ${word.banks.join(" / ")}`;
   $("#wordExample").textContent = word.example;
@@ -38268,6 +38359,7 @@ function newWordQuestion() {
   $("#wordOptions").classList.toggle("hidden", mode === "spelling");
   $("#spellingAnswer").innerHTML = "";
   $("#spellingKeyboard").innerHTML = "";
+  updateDifficultWordButton();
 
   if (mode === "meaning") {
     $("#wordPrompt").textContent = word.word;
@@ -40383,6 +40475,7 @@ function bindEvents() {
   $("#speakKana").addEventListener("click", () => state.kana && speak(state.kana.displayKana, "ja-JP"));
   $("#newWordQuestion").addEventListener("click", newWordQuestion);
   $("#speakWord").addEventListener("click", () => state.word && speak(state.word.speakText || state.word.word));
+  $("#markDifficultWord").addEventListener("click", addCurrentWordToDifficultBank);
   $("#wordPrompt").addEventListener("click", () => state.word && speak(state.word.speakText || state.word.word));
   $("#wordPrompt").addEventListener("keydown", (event) => {
     if ((event.key === "Enter" || event.key === " ") && state.word) {
