@@ -12,7 +12,7 @@ fi
 
 SSH_HOST="${JOJO_SSH_HOST:-root@47.86.175.205}"
 REMOTE_DIR="${JOJO_REMOTE_DIR:-/opt/jojo-lab}"
-APP_VERSION="${JOJO_APP_VERSION:-1.0.1}"
+APP_VERSION="${JOJO_APP_VERSION:-1.0.2}"
 BUILD_META_FILE="$ROOT_DIR/outputs/build-meta.json"
 
 resolve_ssh_key() {
@@ -44,7 +44,7 @@ if ! SSH_KEY="$(resolve_ssh_key)"; then
 fi
 if [[ ! "$APP_VERSION" =~ ^[A-Za-z0-9._+-]+$ ]]; then
   echo "Invalid JOJO_APP_VERSION: $APP_VERSION" >&2
-  echo "Use a compact version such as 1.0.1." >&2
+  echo "Use a compact version such as 1.0.2." >&2
   exit 1
 fi
 
