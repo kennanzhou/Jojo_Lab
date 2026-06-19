@@ -130,7 +130,8 @@ Primary use cases:
 - Word Camp settings should edit mastery levels with compact level buttons, not a select menu; keep these rows low and comfortable for scanning.
 - Word Camp settings should manage all word banks with multi-select delete, rename, and merge. It should also support adding new words and editing word meanings in editable/custom word banks, with results reflected immediately in practice and shared state.
 - Word Camp exchanges 20 Word Camp small stars into 1 global big star; the title-bar small-star tray may use overlapping stars so the progress stays readable on iPad.
-- Word Camp word cards should include a touch-friendly red circular control for adding the current word to a persistent "重难点词库"; this special bank may contain fewer than the normal 10-word import minimum.
+- Word Camp word cards should include a touch-friendly red circular control for adding/removing the current word from a persistent "重难点词库"; this special bank may contain fewer than the normal 10-word import minimum.
+- Word Camp settings must keep the word bank manager visible and usable on iPad; if the full word table is long, scroll the settings content or library area instead of letting the dialog grow off-screen.
 - Saving Word Camp settings must persist the currently selected word bank from the live form control and reset the daily plan when the bank changes; do not rely only on a separate select change event.
 - Word Camp answer buttons and spelling keyboard controls must use touch-safe handlers and debounce correct-answer advancement so iPad touch/click synthesis or old timers cannot skip to another word before the child answers. New Word Camp questions must not inherit selected/focused/hover-highlight state from the previous question.
 - Word Camp random question selection should avoid showing the exact same word twice in a row whenever more than one eligible word is available.

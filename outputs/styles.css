@@ -5007,7 +5007,7 @@ main {
 }
 
 .word-difficulty-button.is-added {
-  background: #8f6f57;
+  background: #b9362c;
   color: #fff8df;
 }
 
@@ -5018,6 +5018,48 @@ main {
 
 .word-difficulty-button[hidden] {
   display: none;
+}
+
+#wordSettingsDialog {
+  width: min(1080px, calc(100vw - 32px)) !important;
+}
+
+#wordSettingsDialog .settings-panel {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  max-height: calc(100dvh - 32px) !important;
+  overflow: hidden;
+}
+
+#wordSettingsDialog .settings-word-library {
+  min-height: 0;
+  max-height: none !important;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+#wordSettingsDialog .word-library-controls {
+  grid-template-columns: minmax(220px, 1fr) repeat(3, minmax(128px, auto));
+}
+
+#wordSettingsDialog .word-bank-checklist {
+  max-height: 150px;
+}
+
+#wordSettingsDialog .word-bank-tool-row {
+  grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(86px, auto));
+}
+
+#wordSettingsDialog .word-entry-editor {
+  grid-template-columns: minmax(150px, 0.9fr) repeat(4, minmax(112px, 1fr)) minmax(136px, auto);
+}
+
+@media (max-width: 980px) {
+  #wordSettingsDialog .word-library-controls,
+  #wordSettingsDialog .word-bank-tool-row,
+  #wordSettingsDialog .word-entry-editor {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 #words .word-card > div {

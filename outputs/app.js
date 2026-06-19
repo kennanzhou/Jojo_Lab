@@ -36231,19 +36231,24 @@ function updateDifficultWordButton() {
   const isStatus = Boolean(card?.classList.contains("word-card-status"));
   const isAdded = hasWord && wordInDifficultBank(state.word);
   button.hidden = !hasWord || isStatus;
-  button.disabled = !hasWord || isStatus || isAdded;
+  button.disabled = !hasWord || isStatus;
   button.classList.toggle("is-added", Boolean(isAdded));
   button.setAttribute("aria-pressed", String(Boolean(isAdded)));
-  button.setAttribute("aria-label", isAdded ? "已加入重难点词库" : "加入重难点词库");
-  button.title = isAdded ? "已加入重难点词库" : "加入重难点词库";
+  button.textContent = isAdded ? "×" : "!";
+  button.setAttribute("aria-label", isAdded ? "从重难点词库移除" : "加入重难点词库");
+  button.title = isAdded ? "从重难点词库移除" : "加入重难点词库";
 }
 
-function addCurrentWordToDifficultBank() {
+function toggleCurrentWordDifficulty() {
   if (!state.word?.word) return;
   const bank = ensureDifficultWordBank();
   const key = normalizedWordText(state.word);
-  const existing = bank.words.some((word) => normalizedWordText(word) === key);
-  if (!existing) {
+  const existingIndex = bank.words.findIndex((word) => normalizedWordText(word) === key);
+  const removed = existingIndex >= 0;
+  const wasViewingDifficultBank = currentWordBank() === difficultWordBankId;
+  if (removed) {
+    bank.words.splice(existingIndex, 1);
+  } else {
     bank.words.push({
       ...cloneWordForCustomBank(state.word),
       addedAt: new Date().toISOString()
@@ -36251,7 +36256,10 @@ function addCurrentWordToDifficultBank() {
   }
   persistWordBankCatalog();
   updateDifficultWordButton();
-  showToast(existing ? "这个单词已经在重难点词库里。" : `已加入重难点词库：${state.word.word}`, existing ? "bad" : "good");
+  showToast(removed ? `已移出重难点词库：${state.word.word}` : `已加入重难点词库：${state.word.word}`, "good");
+  if (removed && wasViewingDifficultBank) {
+    newWordQuestion();
+  }
 }
 
 function installCustomWordBankLabels() {
@@ -40475,7 +40483,7 @@ function bindEvents() {
   $("#speakKana").addEventListener("click", () => state.kana && speak(state.kana.displayKana, "ja-JP"));
   $("#newWordQuestion").addEventListener("click", newWordQuestion);
   $("#speakWord").addEventListener("click", () => state.word && speak(state.word.speakText || state.word.word));
-  $("#markDifficultWord").addEventListener("click", addCurrentWordToDifficultBank);
+  $("#markDifficultWord").addEventListener("click", toggleCurrentWordDifficulty);
   $("#wordPrompt").addEventListener("click", () => state.word && speak(state.word.speakText || state.word.word));
   $("#wordPrompt").addEventListener("keydown", (event) => {
     if ((event.key === "Enter" || event.key === " ") && state.word) {
