@@ -4953,6 +4953,18 @@ main {
   color: #18324a !important;
 }
 
+#words .option-grid.suppress-option-highlight button,
+#words .option-grid.suppress-option-highlight button:hover,
+#words .option-grid.suppress-option-highlight button:focus,
+#words .option-grid.suppress-option-highlight button:focus-visible,
+#words .option-grid.suppress-option-highlight button:active {
+  border-color: var(--line) !important;
+  background-color: #fff !important;
+  color: var(--ink) !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
 @media (hover: none), (pointer: coarse) {
   #words .option-grid button:hover,
   #words .option-grid button:focus-visible {

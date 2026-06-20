@@ -35474,6 +35474,7 @@ let selectedBankCache = { key: "", words: [] };
 let wordNextQuestionTimer = null;
 let wordAnswerLocked = false;
 let wordQuestionToken = 0;
+let optionRenderSerial = 0;
 let lastWordQuestionText = "";
 let galleryHydrated = false;
 let cardCottageHydrated = false;
@@ -37973,8 +37974,21 @@ function renderKanaProgress() {
 function renderOptions(selector, options, correct, handler) {
   const container = $(selector);
   if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+  const renderId = String(++optionRenderSerial);
+  container.dataset.optionRenderId = renderId;
   container.classList.remove("has-selection");
+  container.classList.add("suppress-option-highlight");
   container.innerHTML = options.map((option) => `<button type="button" data-answer="${escapeHtml(option)}">${escapeHtml(option)}</button>`).join("");
+  const restoreOptionHighlight = () => {
+    if (container.dataset.optionRenderId !== renderId) return;
+    container.classList.remove("suppress-option-highlight");
+    container.onpointermove = null;
+    container.onpointerdown = null;
+    container.onkeydown = null;
+  };
+  container.onpointermove = restoreOptionHighlight;
+  container.onpointerdown = restoreOptionHighlight;
+  container.onkeydown = restoreOptionHighlight;
   $all(`${selector} button`).forEach((button) => {
     button.classList.remove("is-active", "is-correct", "is-wrong");
     button.disabled = false;
