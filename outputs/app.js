@@ -40423,6 +40423,8 @@ async function revealCardCottageCard(card) {
   flyer.style.height = `${rect.height}px`;
   flyer.style.setProperty("--fly-x", `${window.innerWidth / 2 - rect.left - rect.width / 2}px`);
   flyer.style.setProperty("--fly-y", `${window.innerHeight / 2 - rect.top - rect.height / 2}px`);
+  const flyScale = Math.max(1.2, Math.min(2.35, (window.innerWidth - 48) / rect.width, (window.innerHeight - 48) / rect.height));
+  flyer.style.setProperty("--fly-scale", String(flyScale));
   document.body.appendChild(flyer);
   card.classList.add("is-revealing", "is-revealing-source");
   window.setTimeout(() => {
@@ -40430,8 +40432,8 @@ async function revealCardCottageCard(card) {
   }, 360);
   const animation = flyer.animate([
     { transform: "translate3d(0, 0, 0) rotateZ(0deg) rotateY(0deg) scale(1)", offset: 0 },
-    { transform: "translate3d(var(--fly-x), var(--fly-y), 0) rotateZ(10deg) rotateY(92deg) scale(2.35)", offset: 0.45 },
-    { transform: "translate3d(var(--fly-x), var(--fly-y), 0) rotateZ(370deg) rotateY(0deg) scale(2.35)", offset: 0.72 },
+    { transform: "translate3d(var(--fly-x), var(--fly-y), 0) rotateZ(10deg) rotateY(92deg) scale(var(--fly-scale))", offset: 0.45 },
+    { transform: "translate3d(var(--fly-x), var(--fly-y), 0) rotateZ(370deg) rotateY(0deg) scale(var(--fly-scale))", offset: 0.72 },
     { transform: "translate3d(0, 0, 0) rotateZ(0deg) rotateY(0deg) scale(1)", offset: 1 }
   ], {
     duration: 1050,
