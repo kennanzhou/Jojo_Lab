@@ -322,11 +322,28 @@ function enforceCardRevealSpend(current, next, patch) {
   if (!newReveals.length) return;
   const currentBigStars = Math.max(0, Number(current.globalRewards?.bigStars || 0));
   const allowedCount = Math.min(newReveals.length, currentBigStars);
-  const allowedNewReveals = new Set(newReveals.slice(0, allowedCount));
+  const acceptedReveals = [];
+  const assignments = Array.isArray(next.cardCottage?.assignments) ? [...next.cardCottage.assignments] : [];
+  const sourceCount = new Set(assignments).size;
+  newReveals.slice(0, allowedCount).forEach((index) => {
+    const revealedSources = new Set([...currentRevealed, ...acceptedReveals].map((cardIndex) => assignments[cardIndex]));
+    const currentSource = assignments[index];
+    if (assignments.length && revealedSources.has(currentSource) && revealedSources.size < sourceCount) {
+      const blockedIndexes = new Set([...currentRevealed, ...acceptedReveals, index]);
+      const swapIndex = assignments.findIndex((source, cardIndex) => {
+        return !blockedIndexes.has(cardIndex) && !revealedSources.has(source);
+      });
+      if (swapIndex >= 0) {
+        [assignments[index], assignments[swapIndex]] = [assignments[swapIndex], assignments[index]];
+      }
+    }
+    acceptedReveals.push(index);
+  });
   next.cardCottage = { ...(next.cardCottage || {}) };
+  if (assignments.length) next.cardCottage.assignments = assignments;
   next.cardCottage.revealed = [...new Set([
     ...currentRevealed,
-    ...newReveals.filter((index) => allowedNewReveals.has(index))
+    ...acceptedReveals
   ])].sort((a, b) => a - b);
   next.globalRewards = {
     ...(next.globalRewards || {}),
