@@ -40229,7 +40229,7 @@ function closeCardPreview() {
   if (dialog?.open) dialog.close();
 }
 
-function spendCardCottageBigStar() {
+function spendCardCottageBigStar(options = {}) {
   state.globalRewards = normalizeGlobalRewards(state.globalRewards, 0);
   if (state.globalRewards.bigStars < 1) {
     playCue("bad");
@@ -40238,10 +40238,21 @@ function spendCardCottageBigStar() {
     return false;
   }
   state.globalRewards.bigStars -= 1;
-  persistGlobalRewards({ allowDecrease: true });
+  if (options.persist !== false) persistGlobalRewards({ allowDecrease: true });
   renderGlobalRewards();
   updateCardCottageSummary();
   return true;
+}
+
+function saveCardCottageRevealSpend() {
+  saveLocalItem("jojoCardCottage", JSON.stringify(state.cardCottage));
+  saveLocalItem("jojoGlobalRewards", JSON.stringify(state.globalRewards));
+  saveSharedState({
+    cardCottage: state.cardCottage,
+    globalRewards: state.globalRewards,
+    allowGlobalRewardDecrease: true
+  }, { immediate: true });
+  invalidateOssImageStorageStatus();
 }
 
 function setCardSettingsStatus(message, tone = "good") {
@@ -40435,9 +40446,9 @@ async function revealCardCottageCard(card) {
     openCardPreview(index);
     return;
   }
-  if (!spendCardCottageBigStar()) return;
+  if (!spendCardCottageBigStar({ persist: false })) return;
   state.cardCottage.revealed = [...new Set([...state.cardCottage.revealed, index])].sort((a, b) => a - b);
-  saveCardCottageState();
+  saveCardCottageRevealSpend();
   updateCardCottageSummary();
   const rect = card.getBoundingClientRect();
   const flyer = card.cloneNode(true);
