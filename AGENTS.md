@@ -39,7 +39,7 @@ Primary use cases:
 
 ## Layout Rules
 
-- iPad landscape is the main layout target. Verify around 1024x768 and the default browser viewport when changing major screens.
+- iPad landscape is the main layout target, but iPad portrait around 768x1024 must not collapse into squeezed desktop columns. Verify both 1024x768 and 768x1024 when changing major screens.
 - Each app should own its own settings interface. Do not put every setting into one global catch-all dialog.
 - The Home settings interface owns shared API configuration such as MiniMax keys/endpoints. App-specific learning controls belong inside that app's settings entry.
 - Home OSS settings should show only the OSS fields, save/status controls, and public deployment checks. Do not show a Cynadu/Prism local-config status panel or "导入本机 OSS" entry in the user-facing settings UI.

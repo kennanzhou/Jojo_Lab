@@ -5344,6 +5344,297 @@ main {
   }
 }
 
+/* iPad portrait stabilization: avoid desktop columns being squeezed into broken blocks. */
+@media (orientation: portrait) and (min-width: 700px) and (max-width: 900px) {
+  html,
+  body {
+    overflow-x: hidden;
+  }
+
+  .topbar,
+  body.subprogram-active .topbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 12px;
+    min-height: 88px !important;
+    padding: 12px 18px 10px !important;
+    align-items: center;
+  }
+
+  .brand,
+  body.subprogram-active .brand {
+    width: auto;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .brand-logo,
+  body.subprogram-active .brand-logo {
+    width: 48px;
+    height: 56px;
+    flex: 0 0 auto;
+  }
+
+  .brand-wordmark,
+  body.subprogram-active .brand-wordmark {
+    min-width: 0;
+    overflow: hidden;
+    gap: 6px;
+  }
+
+  .brand-wordmark strong,
+  body.subprogram-active .brand-wordmark strong {
+    overflow: hidden;
+    font-size: clamp(22px, 4vw, 32px);
+    line-height: 1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .brand-slogan-image,
+  body.subprogram-active .brand-slogan-image {
+    width: clamp(96px, 22vw, 168px);
+    height: clamp(17px, 3.8vw, 28px);
+    flex: 0 1 auto;
+  }
+
+  .topbar-actions,
+  body.subprogram-active .topbar-actions {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+    transform: none;
+  }
+
+  .topbar-module-actions,
+  body.subprogram-active .topbar-module-actions {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+    justify-content: flex-start;
+    margin-left: 0;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    transform: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .view {
+    width: 100%;
+    min-height: calc(100dvh - 88px);
+    padding: 16px 18px 24px !important;
+    overflow-x: hidden;
+  }
+
+  .section-head {
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  body.subprogram-active .view.active > .section-head {
+    display: none !important;
+  }
+
+  .tool-layout,
+  #songs .tool-layout,
+  #gallery .gallery-layout,
+  #phonics .phonics-quest-shell {
+    display: grid;
+    grid-template-columns: 1fr !important;
+    gap: 16px;
+    min-width: 0;
+  }
+
+  #kana .game-board,
+  #words .game-board,
+  #phonics .phonics-quest-board {
+    order: 1;
+  }
+
+  #kana .control-panel,
+  #words .control-panel,
+  #phonics .phonics-unit-panel {
+    order: 2;
+  }
+
+  .control-panel,
+  .upload-panel,
+  .game-board,
+  .prompt-card,
+  .word-card,
+  .phonics-unit-panel,
+  .phonics-quest-card,
+  .song-summary,
+  .gallery-layout,
+  .cardhouse-board {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .game-board {
+    min-height: auto;
+    padding: 16px !important;
+    overflow: hidden;
+  }
+
+  #kana .control-panel,
+  #words .control-panel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: end;
+    gap: 12px;
+    padding: 14px !important;
+  }
+
+  #kana .control-panel label,
+  #words .control-panel label,
+  #kana .control-panel .word-progress-panel,
+  #words .control-panel .word-progress-panel {
+    grid-column: 1 / -1;
+  }
+
+  #kana .prompt-card {
+    grid-template-columns: auto minmax(0, 1fr);
+    min-height: 178px;
+    justify-content: center;
+    gap: 18px;
+    padding: 18px;
+    text-align: left;
+  }
+
+  #kana .prompt-label {
+    grid-column: 1 / -1;
+  }
+
+  #kanaPrompt {
+    font-size: clamp(104px, 18vw, 148px);
+  }
+
+  #kanaHint {
+    align-self: center;
+    color: var(--retro-brown);
+    font-size: clamp(26px, 4.6vw, 38px);
+    font-weight: 900;
+    line-height: 1.12;
+  }
+
+  #kana .option-grid,
+  #words .option-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  #kana .option-grid button,
+  #words .option-grid button {
+    min-height: 84px;
+    font-size: clamp(26px, 4.4vw, 36px);
+  }
+
+  #words .word-card {
+    min-height: 132px !important;
+    padding: 18px 72px 18px 22px !important;
+  }
+
+  #words #wordPrompt {
+    font-size: clamp(50px, 8.4vw, 74px);
+  }
+
+  #words #wordMeta {
+    font-size: 20px;
+    line-height: 1.25;
+  }
+
+  #songs .control-panel {
+    max-height: none;
+    overflow: visible;
+  }
+
+  #songs .song-board {
+    max-height: none;
+    overflow: visible !important;
+  }
+
+  #songs .song-info-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  #songs .song-info-row label:first-child {
+    grid-column: 1 / -1;
+  }
+
+  #songLyrics {
+    height: clamp(120px, 18dvh, 180px);
+  }
+
+  #gallery .upload-panel {
+    max-height: none;
+  }
+
+  #gallery .art-grid {
+    justify-content: center;
+  }
+
+  #gallery .art-card {
+    flex-basis: min(var(--art-width, 260px), calc(50% - 8px));
+  }
+
+  #phonics .phonics-unit-panel {
+    padding: 14px !important;
+  }
+
+  #phonics .phonics-unit-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  #phonics .phonics-quest-card {
+    min-height: auto !important;
+    padding: 22px !important;
+  }
+
+  #phonics .phonics-choice-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #phonics .phonics-choice {
+    min-height: 94px;
+  }
+
+  #cardhouse {
+    --cardhouse-card-max: 146px;
+  }
+
+  .cardhouse-board {
+    height: clamp(560px, calc(100dvh - 142px), 820px);
+    padding: 16px;
+  }
+
+  .cardhouse-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 14px;
+    padding-right: 10px;
+  }
+
+  #cardhouseSettingsDialog {
+    width: calc(100vw - 28px) !important;
+  }
+
+  #cardhouseSettingsDialog .settings-panel {
+    max-height: calc(100dvh - 28px) !important;
+  }
+
+  #cardhouseSettingsDialog .card-settings-layout {
+    grid-template-columns: 1fr;
+  }
+
+  #cardhouseSettingsDialog .card-slot-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .settings-dialog {
+    width: calc(100vw - 28px) !important;
+  }
+}
+
 /* Kana Quest final readability pass. */
 #kana .prompt-card {
   display: grid;
