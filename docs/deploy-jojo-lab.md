@@ -102,7 +102,7 @@ scripts/deploy-jojo-lab.bat
 JOJO_SSH_KEY="/absolute/path/to/cynadu-ssh.pem"   # 推荐每人设置
 JOJO_SSH_HOST="root@47.86.175.205"                # 默认即可
 JOJO_REMOTE_DIR="/opt/jojo-lab"                   # 默认即可
-JOJO_APP_VERSION="1.0.4"                          # 写入 build-meta，默认 1.0.4
+JOJO_APP_VERSION="1.0.5"                          # 写入 build-meta，默认 1.0.5
 ```
 
 ---
