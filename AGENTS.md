@@ -174,6 +174,7 @@ Primary use cases:
 - Keep changes scoped to the relevant module.
 - When the user gives a new interface preference, art direction, usage constraint, or correction to a bad UI decision, update this AGENTS.md file in the same task so future agents do not repeat the mistake.
 - Learning progress, generated analyses, imported word banks, gallery items, stars/rewards, app settings, and similar user-created value should persist across refreshes and across all terminals. Prefer localStorage plus the local shared state service when available.
+- Critical reward/progress writes such as Word Camp answers, daily plans, stars, and Card Cottage reveals should flush to shared state immediately, not only through a delayed background queue.
 - For internet deployment, do not store newly uploaded user images in the repo, in browser-only state, or in server-local upload folders. Use the configured OSS storage for Card Cottage, Art Gallery, and custom homepage backgrounds; keep shared state limited to metadata, public URLs, and object keys.
 - Homepage background presets should also be mirrored to OSS after OSS is configured. Built-in assets can remain as offline fallbacks, but the public deployment path should prefer OSS URLs for both preset and custom backgrounds.
 - OSS credentials belong only in `work/private/` shared state or environment variables. Never hard-code OSS keys, never echo them in responses, and never commit them.

@@ -35247,6 +35247,7 @@ function defaultCardCottageSlots() {
 let serverPersistenceAvailable = false;
 let syncTimer = null;
 let pendingSharedPatch = null;
+let sharedSaveChain = Promise.resolve();
 let wordProgressStorageTimer = null;
 let galleryPersistenceReady = false;
 let latestOssImageStorageStatus = null;
@@ -35768,14 +35769,17 @@ window.addEventListener("pagehide", () => {
     window.clearTimeout(wordProgressStorageTimer);
     saveLocalItem("jojoWordProgress", JSON.stringify(state.wordProgress));
   }
+  if (pendingSharedPatch) {
+    flushSharedState({ keepalive: true });
+  }
 });
 
-function persistWordProgress(changedKey = "") {
-  saveWordProgressLocal(!changedKey);
+function persistWordProgress(changedKey = "", options = {}) {
+  saveWordProgressLocal(Boolean(options.immediate) || !changedKey);
   if (changedKey && state.wordProgress[changedKey]) {
-    saveSharedState({ wordProgressPatch: { [changedKey]: state.wordProgress[changedKey] } });
+    saveSharedState({ wordProgressPatch: { [changedKey]: state.wordProgress[changedKey] } }, options);
   } else {
-    saveSharedState({ wordProgress: state.wordProgress });
+    saveSharedState({ wordProgress: state.wordProgress }, options);
   }
 }
 
@@ -35822,7 +35826,7 @@ function loadGlobalRewards() {
 function persistGlobalRewards() {
   state.globalRewards = normalizeGlobalRewards(state.globalRewards, 0);
   saveLocalItem("jojoGlobalRewards", JSON.stringify(state.globalRewards));
-  saveSharedState({ globalRewards: state.globalRewards });
+  saveSharedState({ globalRewards: state.globalRewards }, { immediate: true });
 }
 
 function normalizeWordRewards(value = {}) {
@@ -35843,7 +35847,7 @@ function loadWordRewards() {
 function persistWordRewards() {
   state.wordRewards = normalizeWordRewards(state.wordRewards);
   saveLocalItem("jojoWordRewards", JSON.stringify(state.wordRewards));
-  saveSharedState({ wordRewards: state.wordRewards });
+  saveSharedState({ wordRewards: state.wordRewards }, { immediate: true });
 }
 
 function loadAppSettings() {
@@ -35977,7 +35981,7 @@ function isWordMastered(word, bank = currentWordBank(), mode = $("#wordMode")?.v
 
 function persistDailyWordPlan() {
   saveLocalItem("jojoDailyWordPlan", JSON.stringify(state.dailyWordPlan));
-  saveSharedState({ dailyWordCount: state.dailyWordCount, dailyWordPlan: state.dailyWordPlan });
+  saveSharedState({ dailyWordCount: state.dailyWordCount, dailyWordPlan: state.dailyWordPlan }, { immediate: true });
 }
 
 function eligibleDailyWords() {
@@ -36402,7 +36406,7 @@ function loadCardCottageState() {
 
 function saveCardCottageState() {
   saveLocalItem("jojoCardCottage", JSON.stringify(state.cardCottage));
-  saveSharedState({ cardCottage: state.cardCottage });
+  saveSharedState({ cardCottage: state.cardCottage }, { immediate: true });
   invalidateOssImageStorageStatus();
 }
 
@@ -37683,19 +37687,32 @@ async function loadSharedWordProgress() {
   } catch {}
 }
 
-async function saveSharedState(patch = {}) {
+async function saveSharedState(patch = {}, options = {}) {
   if (!serverPersistenceAvailable) return;
   pendingSharedPatch = mergeSharedPatch(pendingSharedPatch, patch);
+  if (options.immediate) {
+    await flushSharedState(options);
+    return;
+  }
   window.clearTimeout(syncTimer);
-  syncTimer = window.setTimeout(async () => {
-    const nextPatch = pendingSharedPatch || {};
-    pendingSharedPatch = null;
-    try {
-      await postSharedStatePatch(nextPatch);
-    } catch {
-      serverPersistenceAvailable = false;
-    }
+  syncTimer = window.setTimeout(() => {
+    flushSharedState();
   }, 160);
+}
+
+async function flushSharedState(options = {}) {
+  window.clearTimeout(syncTimer);
+  syncTimer = null;
+  const nextPatch = pendingSharedPatch || {};
+  pendingSharedPatch = null;
+  if (!Object.keys(nextPatch).length) return;
+  sharedSaveChain = sharedSaveChain
+    .catch(() => {})
+    .then(() => postSharedStatePatch(nextPatch, options))
+    .catch(() => {
+      serverPersistenceAvailable = false;
+    });
+  await sharedSaveChain;
 }
 
 function mergeSharedPatch(previous, incoming) {
@@ -37708,13 +37725,15 @@ function mergeSharedPatch(previous, incoming) {
   return merged;
 }
 
-async function postSharedStatePatch(patch = {}) {
+async function postSharedStatePatch(patch = {}, options = {}) {
+  const body = JSON.stringify(patch);
   const response = await fetch(apiUrl("/api/state"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
     },
-    body: JSON.stringify(patch)
+    body,
+    keepalive: Boolean(options.keepalive && body.length < 60000)
   });
   if (!response.ok) throw new Error(`state save failed: ${response.status}`);
   applySharedState(await response.json());
@@ -38159,7 +38178,7 @@ function setWordMastery(wordText, level) {
     record.wrongStreak = 0;
     record.purpleCorrect = 0;
   }
-  persistWordProgress(progressKey);
+  persistWordProgress(progressKey, { immediate: true });
   const isNowMastered = record.wrongStreak < 3 && Number(record.score || 0) >= 3;
   if (!wasMastered && isNowMastered) awardWordMasteryReward();
   renderWordStudyState({ library: true, syncSelect: true });
@@ -38421,7 +38440,7 @@ function finishCorrectWordAnswer(progressKey, record, wasMastered, options = {})
     record.wrongStreak = 0;
     record.purpleCorrect = 0;
   }
-  persistWordProgress(progressKey);
+  persistWordProgress(progressKey, { immediate: true });
   const isNowMastered = record.wrongStreak < 3 && Number(record.score || 0) >= 3;
   if (!wasMastered && isNowMastered) awardWordMasteryReward();
   renderWordProgress();
@@ -38481,7 +38500,7 @@ function handleWordAnswer(isCorrect, correct) {
     record.score = Math.max(0, (record.score || 0) - 1);
     record.wrongStreak = (record.wrongStreak || 0) + 1;
     record.purpleCorrect = 0;
-    persistWordProgress(progressKey);
+    persistWordProgress(progressKey, { immediate: true });
     renderWordProgress();
     feedback.textContent = "再试一次，这一题还不换。";
     feedback.className = "feedback bad";
