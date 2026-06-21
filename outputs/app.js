@@ -35779,7 +35779,7 @@ function persistWordProgress(changedKey = "", options = {}) {
   if (changedKey && state.wordProgress[changedKey]) {
     saveSharedState({ wordProgressPatch: { [changedKey]: state.wordProgress[changedKey] } }, options);
   } else {
-    saveSharedState({ wordProgress: state.wordProgress }, options);
+    saveSharedState({ wordProgress: state.wordProgress, ...(options.replace ? { replaceWordProgress: true } : {}) }, options);
   }
 }
 
@@ -35823,10 +35823,13 @@ function loadGlobalRewards() {
   return normalizeGlobalRewards(stored, legacyBigStars);
 }
 
-function persistGlobalRewards() {
+function persistGlobalRewards(options = {}) {
   state.globalRewards = normalizeGlobalRewards(state.globalRewards, 0);
   saveLocalItem("jojoGlobalRewards", JSON.stringify(state.globalRewards));
-  saveSharedState({ globalRewards: state.globalRewards }, { immediate: true });
+  saveSharedState({
+    globalRewards: state.globalRewards,
+    ...(options.allowDecrease ? { allowGlobalRewardDecrease: true } : {})
+  }, { immediate: true });
 }
 
 function normalizeWordRewards(value = {}) {
@@ -36404,9 +36407,12 @@ function loadCardCottageState() {
   }
 }
 
-function saveCardCottageState() {
+function saveCardCottageState(options = {}) {
   saveLocalItem("jojoCardCottage", JSON.stringify(state.cardCottage));
-  saveSharedState({ cardCottage: state.cardCottage }, { immediate: true });
+  saveSharedState({
+    cardCottage: state.cardCottage,
+    ...(options.replace ? { replaceCardCottage: true } : {})
+  }, { immediate: true });
   invalidateOssImageStorageStatus();
 }
 
@@ -36737,11 +36743,11 @@ function persistWordBankCatalog(options = {}) {
   saveLocalItem("jojoWordBank", state.wordBank);
   saveCustomWordBanks();
   saveAppSettingsState();
-  if (options.progress) persistWordProgress();
+  if (options.progress) persistWordProgress("", { replace: true, immediate: true });
   saveSharedState({
     deletedWordBanks: state.deletedWordBanks,
     wordBank: state.wordBank,
-    ...(options.progress ? { wordProgress: state.wordProgress } : {})
+    ...(options.progress ? { wordProgress: state.wordProgress, replaceWordProgress: true } : {})
   });
   syncWordBankSelect();
   renderWordBankManagers();
@@ -38198,7 +38204,7 @@ function resetCurrentWordBank() {
   });
   state.dailyWordPlan = null;
   removeLocalItem("jojoDailyWordPlan");
-  persistWordProgress();
+  persistWordProgress("", { replace: true, immediate: true });
   saveSharedState({ dailyWordPlan: state.dailyWordPlan });
   renderWordStudyState({ library: true, syncSelect: true });
   newWordQuestion();
@@ -38239,8 +38245,8 @@ function deleteCurrentWordBank() {
   state.wordBank = availableWordBankKeys().find((key) => key !== "all" && key !== bank) || "all";
   saveLocalItem("jojoDeletedWordBanks", JSON.stringify(state.deletedWordBanks));
   saveLocalItem("jojoWordBank", state.wordBank);
-  persistWordProgress();
-  saveSharedState({ deletedWordBanks: state.deletedWordBanks, wordBank: state.wordBank, wordProgress: state.wordProgress });
+  persistWordProgress("", { replace: true, immediate: true });
+  saveSharedState({ deletedWordBanks: state.deletedWordBanks, wordBank: state.wordBank, wordProgress: state.wordProgress, replaceWordProgress: true });
   renderWordStudyState({ library: true, syncSelect: true });
   newWordQuestion();
 }
@@ -40185,7 +40191,7 @@ function updateCardCottageSummary() {
 function resetCardCottage() {
   const totalCards = currentCardCottageTotal();
   state.cardCottage = normalizeCardCottageState({ ...state.cardCottage, assignments: shuffledCardAssignments(state.cardCottage?.slots, totalCards), revealed: [], totalCards });
-  saveCardCottageState();
+  saveCardCottageState({ replace: true });
   renderCardCottage();
   const status = $("#cardhouseSettingsStatus");
   if (status) {
@@ -40232,7 +40238,7 @@ function spendCardCottageBigStar() {
     return false;
   }
   state.globalRewards.bigStars -= 1;
-  persistGlobalRewards();
+  persistGlobalRewards({ allowDecrease: true });
   renderGlobalRewards();
   updateCardCottageSummary();
   return true;

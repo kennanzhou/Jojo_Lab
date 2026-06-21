@@ -276,6 +276,40 @@ function publicState(state, options = {}) {
   return result;
 }
 
+function mergeWordProgressState(currentProgress = {}, incomingProgress = {}, replace = false) {
+  if (replace) return incomingProgress && typeof incomingProgress === "object" ? incomingProgress : {};
+  const currentKeys = Object.keys(currentProgress || {});
+  const incomingKeys = Object.keys(incomingProgress || {});
+  if (incomingKeys.length < currentKeys.length) {
+    return { ...(incomingProgress || {}), ...(currentProgress || {}) };
+  }
+  return { ...(currentProgress || {}), ...(incomingProgress || {}) };
+}
+
+function mergeCardCottageState(currentCard = {}, incomingCard = {}, replace = false) {
+  if (replace) return incomingCard && typeof incomingCard === "object" ? incomingCard : {};
+  const currentRevealed = new Set(Array.isArray(currentCard.revealed) ? currentCard.revealed.map(Number) : []);
+  const incomingRevealed = new Set(Array.isArray(incomingCard.revealed) ? incomingCard.revealed.map(Number) : []);
+  const merged = { ...(currentCard || {}), ...(incomingCard || {}) };
+  if (incomingRevealed.size < currentRevealed.size) {
+    ["assignments", "slots", "totalCards", "defaultSlotsSeeded"].forEach((key) => {
+      if (key in currentCard) merged[key] = currentCard[key];
+    });
+  }
+  merged.revealed = [...new Set([...currentRevealed, ...incomingRevealed])].filter(Number.isFinite).sort((a, b) => a - b);
+  return merged;
+}
+
+function mergeGlobalRewardsState(currentRewards = {}, incomingRewards = {}, allowDecrease = false) {
+  const merged = { ...(currentRewards || {}), ...(incomingRewards || {}) };
+  const currentBigStars = Math.max(0, Number(currentRewards?.bigStars || 0));
+  const incomingBigStars = Math.max(0, Number(incomingRewards?.bigStars || 0));
+  if (!allowDecrease && incomingBigStars < currentBigStars) {
+    merged.bigStars = currentBigStars;
+  }
+  return merged;
+}
+
 function applyStatePatch(current, patch) {
   const next = { ...current };
   if (patch.wordProgressPatch && typeof patch.wordProgressPatch === "object") {
@@ -288,7 +322,16 @@ function applyStatePatch(current, patch) {
       }
     });
   }
-  ["wordProgress", "wordRewards", "globalRewards", "dailyWordPlan", "gallery", "deletedWordBanks", "customWordBanks", "songHistory", "kanaProgress", "kanaRewards", "phonicsQuest", "phonicsRewards", "cardCottage", "appSettings", "homeBackground", "homeBackgroundPresets"].forEach((key) => {
+  if (patch.wordProgress && typeof patch.wordProgress === "object") {
+    next.wordProgress = mergeWordProgressState(current.wordProgress, patch.wordProgress, Boolean(patch.replaceWordProgress));
+  }
+  if (patch.cardCottage && typeof patch.cardCottage === "object") {
+    next.cardCottage = mergeCardCottageState(current.cardCottage, patch.cardCottage, Boolean(patch.replaceCardCottage));
+  }
+  if (patch.globalRewards && typeof patch.globalRewards === "object") {
+    next.globalRewards = mergeGlobalRewardsState(current.globalRewards, patch.globalRewards, Boolean(patch.allowGlobalRewardDecrease));
+  }
+  ["wordRewards", "dailyWordPlan", "gallery", "deletedWordBanks", "customWordBanks", "songHistory", "kanaProgress", "kanaRewards", "phonicsQuest", "phonicsRewards", "appSettings", "homeBackground", "homeBackgroundPresets"].forEach((key) => {
     if (key in patch) next[key] = patch[key];
   });
   ["wordBank", "dailyWordCount", "kanaScore", "played", "artMode"].forEach((key) => {
