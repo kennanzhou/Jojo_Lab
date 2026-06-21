@@ -21,6 +21,7 @@ const authSecretFile = path.join(dataDir, "jojo-auth-secret");
 const loginPin = /^\d{4}$/.test(process.env.JOJO_LOGIN_PIN || "") ? process.env.JOJO_LOGIN_PIN : "1106";
 const demoLoginPin = /^\d{4}$/.test(process.env.JOJO_DEMO_PIN || "") ? process.env.JOJO_DEMO_PIN : "8888";
 const loginSessionSeconds = 30 * 24 * 60 * 60;
+const demoSessionSeconds = 8 * 60 * 60;
 const loginAttemptWindowMs = 30 * 1000;
 const loginAttemptWindowLimit = 18;
 const loginFailureResetMs = 10 * 60 * 1000;
@@ -439,9 +440,13 @@ function signAuthPayload(payload) {
   return crypto.createHmac("sha256", readOrCreateAuthSecret()).update(payload).digest("base64url");
 }
 
+function authSessionSeconds(mode = "full") {
+  return mode === "demo" ? demoSessionSeconds : loginSessionSeconds;
+}
+
 function createAuthToken(mode = "full") {
-  const expiresAt = Date.now() + loginSessionSeconds * 1000;
   const authMode = mode === "demo" ? "demo" : "full";
+  const expiresAt = Date.now() + authSessionSeconds(authMode) * 1000;
   const sessionId = crypto.randomBytes(16).toString("base64url");
   const payload = `${expiresAt}.${authMode}.${sessionId}`;
   return `${payload}.${signAuthPayload(payload)}`;
@@ -470,7 +475,11 @@ function authInfoFromToken(token) {
 }
 
 function authInfo(req) {
-  return authInfoFromToken(parseCookies(req)[authCookieName]);
+  const info = authInfoFromToken(parseCookies(req)[authCookieName]);
+  if (info.authenticated && info.mode === "demo" && !activeDemoSession(info)) {
+    return { ...info, authenticated: false, staleDemo: true };
+  }
+  return info;
 }
 
 function isAuthenticated(req) {
@@ -478,7 +487,8 @@ function isAuthenticated(req) {
 }
 
 function isDemoRequest(req) {
-  return authInfo(req).mode === "demo";
+  const info = authInfo(req);
+  return info.authenticated && info.mode === "demo";
 }
 
 function cloneState(state) {
@@ -496,37 +506,49 @@ function pruneDemoSessions() {
   const now = Date.now();
   if (demoSessions.size <= 300) return;
   for (const [sessionId, entry] of demoSessions) {
-    if (entry.expiresAt < now || now - entry.updatedAt > loginSessionSeconds * 1000) {
+    if (entry.expiresAt < now || now - entry.updatedAt > demoSessionSeconds * 1000) {
       demoSessions.delete(sessionId);
     }
   }
 }
 
-function demoStateForAuth(info) {
+function activeDemoSession(info) {
   pruneDemoSessions();
-  let entry = demoSessions.get(info.sessionId);
+  const entry = demoSessions.get(info.sessionId);
   if (!entry || entry.expiresAt < Date.now()) {
+    demoSessions.delete(info.sessionId);
+    return null;
+  }
+  return entry;
+}
+
+function demoStateForAuth(info, options = {}) {
+  pruneDemoSessions();
+  let entry = activeDemoSession(info);
+  if (!entry && options.create) {
     entry = {
       state: createDemoState(),
-      expiresAt: info.expiresAt,
+      expiresAt: Math.min(info.expiresAt, Date.now() + demoSessionSeconds * 1000),
       updatedAt: Date.now()
     };
     demoSessions.set(info.sessionId, entry);
   }
+  if (!entry) return null;
   entry.updatedAt = Date.now();
   return entry.state;
 }
 
 function requestState(req) {
   const info = authInfo(req);
-  if (info.mode === "demo") return demoStateForAuth(info);
+  if (info.authenticated && info.mode === "demo") return demoStateForAuth(info) || createDemoState();
   return readState();
 }
 
 function mergeRequestStatePatch(req, patch, publicOptions = {}) {
   const info = authInfo(req);
+  if (!info.authenticated) return publicState(readState(), publicOptions);
   if (info.mode !== "demo") return mergeStatePatch(patch, publicOptions);
-  const current = demoStateForAuth(info);
+  const current = demoStateForAuth(info) || createDemoState();
   const next = applyStatePatch(current, patch);
   demoSessions.set(info.sessionId, {
     state: next,
@@ -661,9 +683,10 @@ async function handleAuthLogin(req, res) {
   clearLoginFailures(req);
   const token = createAuthToken(mode);
   const info = authInfoFromToken(token);
-  if (mode === "demo") demoStateForAuth(info);
-  sendJson(res, 200, { ok: true, authenticated: true, mode, demo: mode === "demo", expiresInSeconds: loginSessionSeconds }, {
-    "Set-Cookie": authCookieHeader(req, token)
+  const expiresInSeconds = authSessionSeconds(mode);
+  if (mode === "demo") demoStateForAuth(info, { create: true });
+  sendJson(res, 200, { ok: true, authenticated: true, mode, demo: mode === "demo", expiresInSeconds }, {
+    "Set-Cookie": authCookieHeader(req, token, expiresInSeconds)
   });
 }
 
@@ -1615,8 +1638,8 @@ function renderIndexHtml(html) {
     );
 }
 
-function sendAuthRequired(res) {
-  sendJson(res, 401, { ok: false, authenticated: false, error: "需要先登录。" });
+function sendAuthRequired(res, headers = {}) {
+  sendJson(res, 401, { ok: false, authenticated: false, error: "需要先登录。" }, headers);
 }
 
 const server = http.createServer(async (req, res) => {
@@ -1629,14 +1652,15 @@ const server = http.createServer(async (req, res) => {
     if (requestUrl.pathname === "/api/auth/status" && req.method === "GET") {
       const info = authInfo(req);
       const rateLimit = publicLoginRateLimit(req);
+      const headers = info.staleDemo ? { "Set-Cookie": clearAuthCookieHeader(req) } : {};
       sendJson(res, 200, {
         ok: true,
         authenticated: info.authenticated,
         mode: info.authenticated ? info.mode : "",
-        demo: info.mode === "demo",
+        demo: info.authenticated && info.mode === "demo",
         retryAfterMs: rateLimit.retryAfterMs || 0,
         lockedUntil: rateLimit.lockedUntil || ""
-      });
+      }, headers);
       return;
     }
     if (requestUrl.pathname === "/api/auth/login" && req.method === "POST") {
@@ -1655,9 +1679,12 @@ const server = http.createServer(async (req, res) => {
       });
       return;
     }
-    if (requestUrl.pathname.startsWith("/api/") && !isAuthenticated(req)) {
-      sendAuthRequired(res);
-      return;
+    if (requestUrl.pathname.startsWith("/api/")) {
+      const info = authInfo(req);
+      if (!info.authenticated) {
+        sendAuthRequired(res, info.staleDemo ? { "Set-Cookie": clearAuthCookieHeader(req) } : {});
+        return;
+      }
     }
     if (requestUrl.pathname === "/api/state" && req.method === "GET") {
       sendJson(res, 200, publicState(requestState(req), { lite: requestUrl.searchParams.get("lite") === "1" }));
