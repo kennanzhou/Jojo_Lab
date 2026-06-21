@@ -6187,6 +6187,33 @@ body.subprogram-active .view.active > .section-head {
   max-width: 720px;
 }
 
+#cardhouseSettingsDialog {
+  width: min(1180px, calc(100vw - 32px)) !important;
+}
+
+#cardhouseSettingsDialog .settings-panel {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  width: 100%;
+  max-width: none !important;
+  max-height: calc(100dvh - 32px) !important;
+  overflow: hidden;
+}
+
+#cardhouseSettingsDialog .card-slot-grid {
+  grid-template-columns: repeat(auto-fit, minmax(138px, 1fr));
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-bottom: 18px;
+}
+
+#cardhouseSettingsDialog .card-slot-drop {
+  min-height: clamp(132px, 15vw, 164px);
+}
+
 #cardhouse {
   --cardhouse-surface-width: 1360px;
   --cardhouse-card-max: 190px;
