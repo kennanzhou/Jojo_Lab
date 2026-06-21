@@ -36357,18 +36357,28 @@ function filledCardCottageSlotIndexes(slots = state?.cardCottage?.slots) {
   return normalized.map((slot, index) => slot?.src ? index : -1).filter((index) => index >= 0);
 }
 
+function cardCottageSourceIndexes(slots = state?.cardCottage?.slots) {
+  const uploadedSlots = filledCardCottageSlotIndexes(slots);
+  return uploadedSlots.length ? uploadedSlots : cardCottagePhotoSources.map((_, index) => index);
+}
+
+function shuffledItems(items = []) {
+  const result = [...items];
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+  }
+  return result;
+}
+
 function shuffledCardAssignments(slots = state?.cardCottage?.slots, totalCards = cardCottageDefaultTotal) {
   const total = normalizeCardCottageTotal(totalCards);
-  const uploadedSlots = filledCardCottageSlotIndexes(slots);
-  const sourceIndexes = uploadedSlots.length ? uploadedSlots : cardCottagePhotoSources.map((_, index) => index);
-  const pool = [];
-  while (pool.length < total) {
-    sourceIndexes.forEach((index) => pool.push(index));
-  }
-  const assignments = pool.slice(0, total);
-  for (let index = assignments.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(Math.random() * (index + 1));
-    [assignments[index], assignments[swapIndex]] = [assignments[swapIndex], assignments[index]];
+  const sourceIndexes = cardCottageSourceIndexes(slots);
+  const assignments = [];
+  while (assignments.length < total) {
+    shuffledItems(sourceIndexes).forEach((index) => {
+      if (assignments.length < total) assignments.push(index);
+    });
   }
   return assignments;
 }
@@ -40215,6 +40225,22 @@ function cardCottagePhotoForIndex(index) {
   return cardCottagePhotoSourceForAssignment(photoIndex);
 }
 
+function ensureUniqueCardCottageReveal(index) {
+  state.cardCottage = normalizeCardCottageState(state.cardCottage);
+  const assignments = [...state.cardCottage.assignments];
+  const revealedIndexes = new Set(state.cardCottage.revealed);
+  const revealedSources = new Set(state.cardCottage.revealed.map((cardIndex) => assignments[cardIndex]));
+  const sourceIndexes = cardCottageSourceIndexes(state.cardCottage.slots);
+  const currentSource = assignments[index];
+  if (!revealedSources.has(currentSource) || revealedSources.size >= sourceIndexes.length) return;
+  const swapIndex = assignments.findIndex((source, cardIndex) => {
+    return cardIndex !== index && !revealedIndexes.has(cardIndex) && !revealedSources.has(source);
+  });
+  if (swapIndex < 0) return;
+  [assignments[index], assignments[swapIndex]] = [assignments[swapIndex], assignments[index]];
+  state.cardCottage.assignments = assignments;
+}
+
 function openCardPreview(index) {
   const dialog = $("#cardPreviewDialog");
   const image = $("#cardPreviewImage");
@@ -40446,6 +40472,7 @@ async function revealCardCottageCard(card) {
     openCardPreview(index);
     return;
   }
+  ensureUniqueCardCottageReveal(index);
   if (!spendCardCottageBigStar({ persist: false })) return;
   state.cardCottage.revealed = [...new Set([...state.cardCottage.revealed, index])].sort((a, b) => a - b);
   saveCardCottageRevealSpend();

@@ -310,6 +310,31 @@ function mergeGlobalRewardsState(currentRewards = {}, incomingRewards = {}, allo
   return merged;
 }
 
+function revealedCardIndexes(card = {}) {
+  return new Set(Array.isArray(card.revealed) ? card.revealed.map(Number).filter(Number.isFinite) : []);
+}
+
+function enforceCardRevealSpend(current, next, patch) {
+  if (!patch.cardCottage || patch.replaceCardCottage) return;
+  const currentRevealed = revealedCardIndexes(current.cardCottage);
+  const nextRevealed = revealedCardIndexes(next.cardCottage);
+  const newReveals = [...nextRevealed].filter((index) => !currentRevealed.has(index)).sort((a, b) => a - b);
+  if (!newReveals.length) return;
+  const currentBigStars = Math.max(0, Number(current.globalRewards?.bigStars || 0));
+  const allowedCount = Math.min(newReveals.length, currentBigStars);
+  const allowedNewReveals = new Set(newReveals.slice(0, allowedCount));
+  next.cardCottage = { ...(next.cardCottage || {}) };
+  next.cardCottage.revealed = [...new Set([
+    ...currentRevealed,
+    ...newReveals.filter((index) => allowedNewReveals.has(index))
+  ])].sort((a, b) => a - b);
+  next.globalRewards = {
+    ...(next.globalRewards || {}),
+    bigStars: Math.max(0, currentBigStars - allowedCount),
+    migratedModuleBigStars: true
+  };
+}
+
 function applyStatePatch(current, patch) {
   const next = { ...current };
   if (patch.wordProgressPatch && typeof patch.wordProgressPatch === "object") {
@@ -331,6 +356,7 @@ function applyStatePatch(current, patch) {
   if (patch.globalRewards && typeof patch.globalRewards === "object") {
     next.globalRewards = mergeGlobalRewardsState(current.globalRewards, patch.globalRewards, Boolean(patch.allowGlobalRewardDecrease));
   }
+  enforceCardRevealSpend(current, next, patch);
   ["wordRewards", "dailyWordPlan", "gallery", "deletedWordBanks", "customWordBanks", "songHistory", "kanaProgress", "kanaRewards", "phonicsQuest", "phonicsRewards", "appSettings", "homeBackground", "homeBackgroundPresets"].forEach((key) => {
     if (key in patch) next[key] = patch[key];
   });

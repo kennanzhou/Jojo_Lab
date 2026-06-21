@@ -157,6 +157,7 @@ Primary use cases:
 - Flipping a hidden Card Cottage card costs 1 global big gold star. If no big gold star is available, block the reveal and explain that the child needs to earn a big star from any practice module first.
 - When a hidden card is tapped, it should fly out, rotate/scale up, reveal the front, return to its original slot, and then stay face-up.
 - Revealing a hidden Card Cottage card and spending 1 global big star must persist as one atomic shared-state update; never save the reveal and the star deduction as separate competing writes.
+- Newly revealed Card Cottage fronts should avoid repeating the same photo/source until every available front image source has been revealed once; only then may repeats appear.
 - Revealed cards can open a large photo preview, but the full image must remain visible in both portrait and landscape viewports; use fixed full-screen contain sizing, never crop it off-screen. Card reveal fly-out scaling should also be clamped to the viewport so the enlarged card remains visible.
 - A deck of unrevealed cards should feel collectible and child-facing; avoid flat admin grids.
 
