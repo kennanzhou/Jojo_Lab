@@ -117,7 +117,7 @@ const defaultState = {
   kanaRewards: { smallStars: 0, bigStars: 0, masteryCredits: 0, awardedKeys: [] },
   phonicsQuest: { unitIndex: 0, unlocked: 0, stars: 0, completed: [], stepIndex: 0, listenIndex: 0, flashIndex: 0, blendIndex: 0, spellIndex: 0, spelling: [] },
   phonicsRewards: { smallStars: 0, bigStars: 0, awardedUnits: [] },
-  cardCottage: { assignments: [], revealed: [], slots: [], defaultSlotsSeeded: false, totalCards: 50 },
+  cardCottage: { assignments: [], revealed: [], revealedLocks: {}, slots: [], defaultSlotsSeeded: false, totalCards: 50 },
   appSettings: { wordRepeatVoEnabled: false },
   kanaScore: 0,
   played: 0,
@@ -144,6 +144,8 @@ const defaultState = {
     useSsl: true
   }
 };
+
+const cardCottageBuiltInFronts = Array.from({ length: 19 }, (_, index) => `./assets/card-cottage/fronts/jojo-front-${String(index + 1).padStart(2, "0")}.jpg`);
 
 function ensureDataDir() {
   fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
@@ -291,6 +293,7 @@ function mergeCardCottageState(currentCard = {}, incomingCard = {}, replace = fa
   const currentRevealed = new Set(Array.isArray(currentCard.revealed) ? currentCard.revealed.map(Number) : []);
   const incomingRevealed = new Set(Array.isArray(incomingCard.revealed) ? incomingCard.revealed.map(Number) : []);
   const merged = { ...(currentCard || {}), ...(incomingCard || {}) };
+  merged.revealedLocks = { ...(currentCard.revealedLocks || {}), ...(incomingCard.revealedLocks || {}) };
   if (incomingRevealed.size < currentRevealed.size) {
     ["assignments", "slots", "totalCards", "defaultSlotsSeeded"].forEach((key) => {
       if (key in currentCard) merged[key] = currentCard[key];
@@ -312,6 +315,17 @@ function mergeGlobalRewardsState(currentRewards = {}, incomingRewards = {}, allo
 
 function revealedCardIndexes(card = {}) {
   return new Set(Array.isArray(card.revealed) ? card.revealed.map(Number).filter(Number.isFinite) : []);
+}
+
+function cardCottageImageRecordForAssignment(card = {}, cardIndex = 0) {
+  const sourceIndex = Array.isArray(card.assignments) ? Number(card.assignments[cardIndex] || 0) : 0;
+  const slot = Array.isArray(card.slots) ? card.slots[sourceIndex] : null;
+  if (slot?.src) return slot;
+  return {
+    name: `Jojo Photo ${String(sourceIndex + 1).padStart(2, "0")}`,
+    src: cardCottageBuiltInFronts[sourceIndex] || cardCottageBuiltInFronts[0],
+    updatedAt: "built-in"
+  };
 }
 
 function enforceCardRevealSpend(current, next, patch) {
@@ -341,6 +355,12 @@ function enforceCardRevealSpend(current, next, patch) {
   });
   next.cardCottage = { ...(next.cardCottage || {}) };
   if (assignments.length) next.cardCottage.assignments = assignments;
+  next.cardCottage.revealedLocks = { ...(next.cardCottage.revealedLocks || {}) };
+  acceptedReveals.forEach((index) => {
+    if (!next.cardCottage.revealedLocks[index]) {
+      next.cardCottage.revealedLocks[index] = cardCottageImageRecordForAssignment(next.cardCottage, index);
+    }
+  });
   next.cardCottage.revealed = [...new Set([
     ...currentRevealed,
     ...acceptedReveals
@@ -1034,7 +1054,11 @@ function applySignedOssUrlsToPublicState(state) {
   if (state.cardCottage && Array.isArray(state.cardCottage.slots)) {
     state.cardCottage = {
       ...state.cardCottage,
-      slots: state.cardCottage.slots.map((slot) => slot ? publicOssImageRecord(slot, "src", config) : slot)
+      slots: state.cardCottage.slots.map((slot) => slot ? publicOssImageRecord(slot, "src", config) : slot),
+      revealedLocks: Object.fromEntries(Object.entries(state.cardCottage.revealedLocks || {}).map(([key, lock]) => [
+        key,
+        lock ? publicOssImageRecord(lock, "src", config) : lock
+      ]))
     };
   }
   return state;

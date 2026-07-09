@@ -36339,17 +36339,22 @@ function normalizeCardCottageSlots(slots = []) {
   const normalized = Array.from({ length: cardCottageSlotTotal }, (_, index) => {
     const slot = Array.isArray(slots) ? slots[index] : null;
     if (!slot?.src) return null;
-    return {
-      name: String(slot.name || `Card ${index + 1}`),
-      src: String(slot.src),
-      updatedAt: slot.updatedAt || "",
-      objectKey: slot.objectKey ? String(slot.objectKey) : "",
-      storage: slot.storage ? String(slot.storage) : "",
-      mime: slot.mime ? String(slot.mime) : "",
-      size: Number(slot.size || 0) || 0
-    };
+    return normalizeCardCottageImageRecord(slot, `Card ${index + 1}`);
   });
   return normalized;
+}
+
+function normalizeCardCottageImageRecord(record = {}, fallbackName = "Card") {
+  if (!record?.src) return null;
+  return {
+    name: String(record.name || fallbackName),
+    src: String(record.src),
+    updatedAt: record.updatedAt || "",
+    objectKey: record.objectKey ? String(record.objectKey) : "",
+    storage: record.storage ? String(record.storage) : "",
+    mime: record.mime ? String(record.mime) : "",
+    size: Number(record.size || 0) || 0
+  };
 }
 
 function filledCardCottageSlotIndexes(slots = state?.cardCottage?.slots) {
@@ -36383,6 +36388,32 @@ function shuffledCardAssignments(slots = state?.cardCottage?.slots, totalCards =
   return assignments;
 }
 
+function cardCottagePhotoRecordForAssignment(sourceIndex, slots = state?.cardCottage?.slots) {
+  const normalizedSlots = normalizeCardCottageSlots(slots);
+  const uploadedSlotIndexes = filledCardCottageSlotIndexes(normalizedSlots);
+  if (uploadedSlotIndexes.length) {
+    const fallbackIndex = uploadedSlotIndexes[0];
+    return normalizeCardCottageImageRecord(
+      normalizedSlots[sourceIndex] || normalizedSlots[fallbackIndex],
+      `Card ${Number(sourceIndex || fallbackIndex) + 1}`
+    );
+  }
+  const src = cardCottagePhotoSources[sourceIndex] || cardCottagePhotoSources[0];
+  return normalizeCardCottageImageRecord({ name: `Jojo Photo ${String(Number(sourceIndex || 0) + 1).padStart(2, "0")}`, src, updatedAt: "built-in" });
+}
+
+function normalizeCardCottageRevealLocks(locks = {}, totalCards = cardCottageDefaultTotal) {
+  const entries = Object.entries(locks || {});
+  return entries.reduce((result, [key, value]) => {
+    const index = Number(key);
+    const record = normalizeCardCottageImageRecord(value, `Card ${index + 1}`);
+    if (Number.isInteger(index) && index >= 0 && index < totalCards && record?.src) {
+      result[index] = record;
+    }
+    return result;
+  }, {});
+}
+
 function normalizeCardCottageState(value = {}) {
   const totalCards = normalizeCardCottageTotal(value.totalCards);
   const rawSlots = normalizeCardCottageSlots(value.slots);
@@ -36402,7 +36433,15 @@ function normalizeCardCottageState(value = {}) {
   const revealed = Array.isArray(value.revealed)
     ? value.revealed.map(Number).filter((item) => item >= 0 && item < totalCards)
     : [];
-  return { assignments, revealed: [...new Set(revealed)], slots, defaultSlotsSeeded: true, totalCards };
+  const uniqueRevealed = [...new Set(revealed)];
+  const revealedLocks = normalizeCardCottageRevealLocks(value.revealedLocks, totalCards);
+  uniqueRevealed.forEach((index) => {
+    if (!revealedLocks[index]) {
+      const record = cardCottagePhotoRecordForAssignment(assignments[index] || 0, slots);
+      if (record?.src) revealedLocks[index] = record;
+    }
+  });
+  return { assignments, revealed: uniqueRevealed, revealedLocks, slots, defaultSlotsSeeded: true, totalCards };
 }
 
 function loadCardCottageState() {
@@ -40156,9 +40195,8 @@ function renderCardCottage() {
   const totalCards = currentCardCottageTotal();
   const revealed = new Set(state.cardCottage.revealed);
   grid.innerHTML = Array.from({ length: totalCards }, (_, index) => {
-    const photoIndex = state.cardCottage.assignments[index] || 0;
     const isRevealed = revealed.has(index);
-    const photoSrc = cardCottagePhotoSourceForAssignment(photoIndex);
+    const photoSrc = cardCottagePhotoForIndex(index);
     return `
       <button class="reward-card ${isRevealed ? "is-revealed" : "locked"}" type="button" data-card-index="${index}" aria-label="第 ${index + 1} 张${isRevealed ? "已翻开奖励卡" : "待翻开奖励卡"}">
         <span class="reward-card-inner">
@@ -40200,7 +40238,7 @@ function updateCardCottageSummary() {
 
 function resetCardCottage() {
   const totalCards = currentCardCottageTotal();
-  state.cardCottage = normalizeCardCottageState({ ...state.cardCottage, assignments: shuffledCardAssignments(state.cardCottage?.slots, totalCards), revealed: [], totalCards });
+  state.cardCottage = normalizeCardCottageState({ ...state.cardCottage, assignments: shuffledCardAssignments(state.cardCottage?.slots, totalCards), revealed: [], revealedLocks: {}, totalCards });
   saveCardCottageState({ replace: true });
   renderCardCottage();
   const status = $("#cardhouseSettingsStatus");
@@ -40212,29 +40250,41 @@ function resetCardCottage() {
 }
 
 function cardCottagePhotoSourceForAssignment(sourceIndex) {
-  const slots = normalizeCardCottageSlots(state.cardCottage?.slots);
-  const uploadedSlotIndexes = filledCardCottageSlotIndexes(slots);
-  if (uploadedSlotIndexes.length) {
-    return appAssetUrl(slots[sourceIndex]?.src || slots[uploadedSlotIndexes[0]]?.src || cardCottagePhotoSources[0]);
-  }
-  return cardCottagePhotoSources[sourceIndex] || cardCottagePhotoSources[0];
+  const record = cardCottagePhotoRecordForAssignment(sourceIndex);
+  return appAssetUrl(record?.src || cardCottagePhotoSources[0]);
+}
+
+function cardCottageLockedRecordForIndex(index) {
+  const lock = state.cardCottage?.revealedLocks?.[index];
+  return normalizeCardCottageImageRecord(lock, `Card ${Number(index) + 1}`);
+}
+
+function cardCottageImageKey(record = {}) {
+  return String(record.objectKey || record.src || "");
+}
+
+function cardCottageRecordForIndex(index) {
+  const locked = state.cardCottage?.revealed?.includes(index) ? cardCottageLockedRecordForIndex(index) : null;
+  if (locked?.src) return locked;
+  const photoIndex = state.cardCottage.assignments[index] || 0;
+  return cardCottagePhotoRecordForAssignment(photoIndex);
 }
 
 function cardCottagePhotoForIndex(index) {
-  const photoIndex = state.cardCottage.assignments[index] || 0;
-  return cardCottagePhotoSourceForAssignment(photoIndex);
+  const record = cardCottageRecordForIndex(index);
+  return appAssetUrl(record?.src || cardCottagePhotoSources[0]);
 }
 
 function ensureUniqueCardCottageReveal(index) {
   state.cardCottage = normalizeCardCottageState(state.cardCottage);
   const assignments = [...state.cardCottage.assignments];
   const revealedIndexes = new Set(state.cardCottage.revealed);
-  const revealedSources = new Set(state.cardCottage.revealed.map((cardIndex) => assignments[cardIndex]));
-  const sourceIndexes = cardCottageSourceIndexes(state.cardCottage.slots);
-  const currentSource = assignments[index];
-  if (!revealedSources.has(currentSource) || revealedSources.size >= sourceIndexes.length) return;
+  const revealedSources = new Set(state.cardCottage.revealed.map((cardIndex) => cardCottageImageKey(cardCottageRecordForIndex(cardIndex))));
+  const currentKey = cardCottageImageKey(cardCottagePhotoRecordForAssignment(assignments[index], state.cardCottage.slots));
+  if (!revealedSources.has(currentKey)) return;
   const swapIndex = assignments.findIndex((source, cardIndex) => {
-    return cardIndex !== index && !revealedIndexes.has(cardIndex) && !revealedSources.has(source);
+    const key = cardCottageImageKey(cardCottagePhotoRecordForAssignment(source, state.cardCottage.slots));
+    return cardIndex !== index && !revealedIndexes.has(cardIndex) && !revealedSources.has(key);
   });
   if (swapIndex < 0) return;
   [assignments[index], assignments[swapIndex]] = [assignments[swapIndex], assignments[index]];
@@ -40281,6 +40331,13 @@ function saveCardCottageRevealSpend() {
   invalidateOssImageStorageStatus();
 }
 
+function lockCardCottageReveal(index) {
+  state.cardCottage.revealedLocks = { ...(state.cardCottage.revealedLocks || {}) };
+  const sourceIndex = state.cardCottage.assignments[index] || 0;
+  const record = cardCottagePhotoRecordForAssignment(sourceIndex, state.cardCottage.slots);
+  if (record?.src) state.cardCottage.revealedLocks[index] = record;
+}
+
 function setCardSettingsStatus(message, tone = "good") {
   const status = $("#cardhouseSettingsStatus");
   if (!status) return;
@@ -40290,9 +40347,17 @@ function setCardSettingsStatus(message, tone = "good") {
 
 function rerollCardCottageAssignments() {
   const totalCards = currentCardCottageTotal();
+  const previous = normalizeCardCottageState(state.cardCottage);
+  const nextAssignments = shuffledCardAssignments(previous.slots, totalCards);
+  const revealedIndexes = new Set(previous.revealed);
+  revealedIndexes.forEach((index) => {
+    if (index < nextAssignments.length && previous.assignments[index] !== undefined) {
+      nextAssignments[index] = previous.assignments[index];
+    }
+  });
   state.cardCottage = normalizeCardCottageState({
-    ...state.cardCottage,
-    assignments: shuffledCardAssignments(state.cardCottage?.slots, totalCards),
+    ...previous,
+    assignments: nextAssignments,
     totalCards
   });
 }
@@ -40474,6 +40539,7 @@ async function revealCardCottageCard(card) {
   }
   ensureUniqueCardCottageReveal(index);
   if (!spendCardCottageBigStar({ persist: false })) return;
+  lockCardCottageReveal(index);
   state.cardCottage.revealed = [...new Set([...state.cardCottage.revealed, index])].sort((a, b) => a - b);
   saveCardCottageRevealSpend();
   updateCardCottageSummary();
