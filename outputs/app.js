@@ -37766,6 +37766,7 @@ async function flushSharedState(options = {}) {
     .then(() => postSharedStatePatch(nextPatch, options))
     .catch(() => {
       serverPersistenceAvailable = false;
+      if (options.strict) throw new Error("shared state save failed");
     });
   await sharedSaveChain;
 }
@@ -40198,7 +40199,7 @@ function renderCardCottage() {
     const isRevealed = revealed.has(index);
     const photoSrc = cardCottagePhotoForIndex(index);
     return `
-      <button class="reward-card ${isRevealed ? "is-revealed" : "locked"}" type="button" data-card-index="${index}" aria-label="第 ${index + 1} 张${isRevealed ? "已翻开奖励卡" : "待翻开奖励卡"}">
+      <button class="reward-card ${isRevealed ? "is-revealed" : "locked"}" type="button" data-card-index="${index}" data-card-photo-src="${escapeHtml(photoSrc)}" aria-label="第 ${index + 1} 张${isRevealed ? "已翻开奖励卡" : "待翻开奖励卡"}">
         <span class="reward-card-inner">
           <span class="reward-card-face reward-card-back" aria-hidden="true"></span>
           <span class="reward-card-face reward-card-front">
@@ -40291,11 +40292,11 @@ function ensureUniqueCardCottageReveal(index) {
   state.cardCottage.assignments = assignments;
 }
 
-function openCardPreview(index) {
+function openCardPreview(index, photoSrc = "") {
   const dialog = $("#cardPreviewDialog");
   const image = $("#cardPreviewImage");
   if (!dialog || !image) return;
-  image.src = cardCottagePhotoForIndex(index);
+  image.src = photoSrc || cardCottagePhotoForIndex(index);
   image.alt = `Jojo 奖励卡大图 ${index + 1}`;
   dialog.showModal();
 }
@@ -40320,14 +40321,14 @@ function spendCardCottageBigStar(options = {}) {
   return true;
 }
 
-function saveCardCottageRevealSpend() {
+async function saveCardCottageRevealSpend() {
   saveLocalItem("jojoCardCottage", JSON.stringify(state.cardCottage));
   saveLocalItem("jojoGlobalRewards", JSON.stringify(state.globalRewards));
-  saveSharedState({
+  await saveSharedState({
     cardCottage: state.cardCottage,
     globalRewards: state.globalRewards,
     allowGlobalRewardDecrease: true
-  }, { immediate: true });
+  }, { immediate: true, strict: true });
   invalidateOssImageStorageStatus();
 }
 
@@ -40534,14 +40535,29 @@ async function revealCardCottageCard(card) {
   const index = Number(card.dataset.cardIndex);
   if (!Number.isFinite(index) || card.classList.contains("is-revealing")) return;
   if (state.cardCottage.revealed.includes(index)) {
-    openCardPreview(index);
+    openCardPreview(index, card.dataset.cardPhotoSrc || "");
     return;
   }
+  const previousCardCottage = JSON.parse(JSON.stringify(state.cardCottage));
+  const previousGlobalRewards = JSON.parse(JSON.stringify(state.globalRewards));
   ensureUniqueCardCottageReveal(index);
   if (!spendCardCottageBigStar({ persist: false })) return;
   lockCardCottageReveal(index);
   state.cardCottage.revealed = [...new Set([...state.cardCottage.revealed, index])].sort((a, b) => a - b);
-  saveCardCottageRevealSpend();
+  const photoSrc = cardCottagePhotoForIndex(index);
+  card.dataset.cardPhotoSrc = photoSrc;
+  try {
+    await saveCardCottageRevealSpend();
+  } catch {
+    state.cardCottage = previousCardCottage;
+    state.globalRewards = previousGlobalRewards;
+    saveLocalItem("jojoCardCottage", JSON.stringify(state.cardCottage));
+    saveLocalItem("jojoGlobalRewards", JSON.stringify(state.globalRewards));
+    renderGlobalRewards();
+    updateCardCottageSummary();
+    showToast("这张卡还没有保存成功，请再点一次。", "bad");
+    return;
+  }
   updateCardCottageSummary();
   const rect = card.getBoundingClientRect();
   const flyer = card.cloneNode(true);
