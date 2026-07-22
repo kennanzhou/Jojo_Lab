@@ -35227,8 +35227,8 @@ const defaultHomeBackground = {
 
 const cardCottagePhotoSources = Array.from({ length: 19 }, (_, index) => `./assets/card-cottage/fronts/jojo-front-${String(index + 1).padStart(2, "0")}.jpg`);
 const cardCottageFrameSrc = "./assets/card-cottage/gold-frame.png";
-const cardCottageDefaultTotal = 50;
-const cardCottageSlotTotal = 50;
+const cardCottageDefaultTotal = 100;
+const cardCottageSlotTotal = 100;
 const cardCottageMinTotal = 1;
 const cardCottageMaxTotal = 100;
 const cardCottageUploadMaxEdge = 1800;

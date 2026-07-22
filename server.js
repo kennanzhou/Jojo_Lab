@@ -117,7 +117,7 @@ const defaultState = {
   kanaRewards: { smallStars: 0, bigStars: 0, masteryCredits: 0, awardedKeys: [] },
   phonicsQuest: { unitIndex: 0, unlocked: 0, stars: 0, completed: [], stepIndex: 0, listenIndex: 0, flashIndex: 0, blendIndex: 0, spellIndex: 0, spelling: [] },
   phonicsRewards: { smallStars: 0, bigStars: 0, awardedUnits: [] },
-  cardCottage: { assignments: [], revealed: [], revealedLocks: {}, slots: [], defaultSlotsSeeded: false, totalCards: 50 },
+  cardCottage: { assignments: [], revealed: [], revealedLocks: {}, slots: [], defaultSlotsSeeded: false, totalCards: 100 },
   appSettings: { wordRepeatVoEnabled: false },
   kanaScore: 0,
   played: 0,
@@ -146,6 +146,7 @@ const defaultState = {
 };
 
 const cardCottageBuiltInFronts = Array.from({ length: 19 }, (_, index) => `./assets/card-cottage/fronts/jojo-front-${String(index + 1).padStart(2, "0")}.jpg`);
+const cardCottageSlotTotal = 100;
 
 function ensureDataDir() {
   fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
@@ -1192,7 +1193,7 @@ function sourceNeedsOss(src) {
 }
 
 function normalizeCardCottageSlotsForServer(slots = []) {
-  return Array.from({ length: 50 }, (_, index) => {
+  return Array.from({ length: cardCottageSlotTotal }, (_, index) => {
     const slot = Array.isArray(slots) ? slots[index] : null;
     if (!slot?.src) return null;
     return {
@@ -1459,7 +1460,7 @@ async function testOssUpload() {
 
 function saveCardCottageUpload(body) {
   const slot = Number(body.slot);
-  if (!Number.isInteger(slot) || slot < 0 || slot >= 50) throw new Error("Invalid Card Cottage slot.");
+  if (!Number.isInteger(slot) || slot < 0 || slot >= cardCottageSlotTotal) throw new Error("Invalid Card Cottage slot.");
   return uploadImageToOss({
     ...body,
     folder: "card-cottage",

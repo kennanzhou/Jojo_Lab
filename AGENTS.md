@@ -147,10 +147,10 @@ Primary use cases:
 - Card Cottage should show 4-6 cards per row depending on viewport width; avoid dense 8-card rows.
 - Card Cottage must adapt beyond the iPad layout: cap the board width and card size on large desktop screens, use responsive row/height rules for non-iPad screens, and avoid oversized cards, tiny squeezed cards, or horizontal scrolling.
 - The Card Cottage card grid should be vertically scrollable inside the card interface, rather than stretching the whole page, and it must not allow horizontal scrolling.
-- Card Cottage's title area should stay compact: show the real global big gold star as an icon with its count, plus a single revealed/total counter such as "0/50". Do not show label chips like "大金星", "已翻开", or "待翻开" in the top area.
-- Card Cottage settings must expose 50 front-image slots. Users should be able to upload, replace, delete, and drag-drop images into those slots with large, orderly controls.
-- Card Cottage settings need enough width and an internal scroll area so all 50 image slots can be reached on iPad and desktop; do not let generic module dialog width caps squeeze or hide the slot grid.
-- Card Cottage settings must also let the user set the deck's total card count. Keep this deck total separate from the 50 front-image slots; if the deck has more cards than filled image slots, repeat available images randomly.
+- Card Cottage's title area should stay compact: show the real global big gold star as an icon with its count, plus a single revealed/total counter such as "0/100". Do not show label chips like "大金星", "已翻开", or "待翻开" in the top area.
+- Card Cottage settings must expose 100 front-image slots. Users should be able to upload, replace, delete, and drag-drop images into those slots with large, orderly controls.
+- Card Cottage settings need enough width and an internal scroll area so all 100 image slots can be reached on iPad and desktop; do not let generic module dialog width caps squeeze or hide the slot grid.
+- Card Cottage settings must also let the user set the deck's total card count. Keep this deck total separate from the 100 front-image slots; if the deck has more cards than filled image slots, repeat available images randomly.
 - Card Cottage's built-in/default Jojo photos should appear in those front-image slots by default, so users can see, delete, or replace them from the same interface.
 - Card Cottage uploaded slot images should persist through the local shared state/service so all terminals see the same deck assets.
 - If fewer Card Cottage slot images are filled than the configured deck total, the visible deck should randomly repeat the available uploaded images. If none are uploaded, use the built-in Jojo reward photos as a fallback.
