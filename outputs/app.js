@@ -35987,6 +35987,30 @@ function persistDailyWordPlan() {
   saveSharedState({ dailyWordCount: state.dailyWordCount, dailyWordPlan: state.dailyWordPlan }, { immediate: true });
 }
 
+async function resetTodayWordPlan() {
+  state.dailyWordPlan = null;
+  removeLocalItem("jojoDailyWordPlan");
+  $("#wordSettingsStatus").textContent = "正在重新选择今天要背的单词...";
+  $("#wordSettingsStatus").className = "feedback";
+  try {
+    if (serverPersistenceAvailable) {
+      await saveSharedState({ dailyWordPlan: state.dailyWordPlan }, { immediate: true, strict: true });
+    }
+    ensureDailyWordPlan();
+    renderWordStudyState({ syncSelect: true, library: true });
+    newWordQuestion();
+    const todayWords = dailyWords();
+    const todayMastered = todayWords.filter((word) => isWordMastered(word)).length;
+    $("#wordSettingsStatus").textContent = `今天的单词已重新选择：${todayMastered} / ${todayWords.length}`;
+    $("#wordSettingsStatus").className = "feedback good";
+    showToast("今天的单词已重新选择", "good");
+  } catch {
+    $("#wordSettingsStatus").textContent = "重新选择失败，请稍后再试。";
+    $("#wordSettingsStatus").className = "feedback bad";
+    showToast("重新选择失败，请稍后再试", "bad");
+  }
+}
+
 function eligibleDailyWords() {
   const bank = currentWordBank();
   const mode = $("#wordMode")?.value || "meaning";
@@ -40659,6 +40683,7 @@ function bindEvents() {
     renderWordStudyState({ library: true, syncSelect: true });
     newWordQuestion();
   });
+  $("#resetTodayWords").addEventListener("click", resetTodayWordPlan);
   $("#resetWordBank").addEventListener("click", resetCurrentWordBank);
   $("#resetWordStars").addEventListener("click", resetWordStars);
   $("#deleteWordBank").addEventListener("click", deleteCurrentWordBank);
