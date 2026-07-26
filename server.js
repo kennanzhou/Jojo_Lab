@@ -123,7 +123,7 @@ const defaultState = {
   played: 0,
   artMode: false,
   gallery: null,
-  homeBackground: { mode: "preset", preset: "robot-cheer", src: "./assets/jojo-retro-hero-robot-cheer.png" },
+  homeBackground: { mode: "preset", preset: "symbiote-cheer", src: "./assets/jojo-retro-hero-robot-symbiote.jpg" },
   homeBackgroundPresets: [],
   aiSettings: {
     mode: "minimax-openai",
@@ -1281,6 +1281,7 @@ async function deleteOssObject(objectKey) {
 }
 
 const homeBackgroundPresetDefaults = [
+  { id: "symbiote-cheer", label: "黑影小巴", src: "./assets/jojo-retro-hero-robot-symbiote.jpg" },
   { id: "robot-cheer", label: "机器人小巴", src: "./assets/jojo-retro-hero-robot-cheer.png" },
   { id: "storybook", label: "故事小巴", src: "./assets/jojo-retro-hero-with-jojo.png" },
   { id: "ukulele", label: "尤克里里", src: "./assets/jojo-retro-hero-cartoon-ukulele.png" },

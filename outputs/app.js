@@ -35213,6 +35213,7 @@ const defaultOssSettings = {
 };
 
 const homeBackgroundPresets = [
+  { id: "symbiote-cheer", label: "黑影小巴", src: "./assets/jojo-retro-hero-robot-symbiote.jpg" },
   { id: "robot-cheer", label: "机器人小巴", src: "./assets/jojo-retro-hero-robot-cheer.png" },
   { id: "storybook", label: "故事小巴", src: "./assets/jojo-retro-hero-with-jojo.png" },
   { id: "ukulele", label: "尤克里里", src: "./assets/jojo-retro-hero-cartoon-ukulele.png" },
@@ -35221,7 +35222,7 @@ const homeBackgroundPresets = [
 
 const defaultHomeBackground = {
   mode: "preset",
-  preset: "robot-cheer",
+  preset: "symbiote-cheer",
   src: homeBackgroundPresets[0].src
 };
 
