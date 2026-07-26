@@ -35477,6 +35477,7 @@ let wordAnswerLocked = false;
 let wordQuestionToken = 0;
 let optionRenderSerial = 0;
 let lastWordQuestionText = "";
+let wordProgressReady = false;
 let galleryHydrated = false;
 let cardCottageHydrated = false;
 let songHistoryHydrated = false;
@@ -35775,6 +35776,12 @@ window.addEventListener("pagehide", () => {
 });
 
 function persistWordProgress(changedKey = "", options = {}) {
+  if (changedKey && state.wordProgress[changedKey]) {
+    state.wordProgress[changedKey] = {
+      ...state.wordProgress[changedKey],
+      updatedAt: new Date().toISOString()
+    };
+  }
   saveWordProgressLocal(Boolean(options.immediate) || !changedKey);
   if (changedKey && state.wordProgress[changedKey]) {
     saveSharedState({ wordProgressPatch: { [changedKey]: state.wordProgress[changedKey] } }, options);
@@ -36019,6 +36026,16 @@ function eligibleDailyWords() {
 
 function ensureDailyWordPlan() {
   repairCurrentWordBank();
+  if (serverPersistenceAvailable && !wordProgressReady) {
+    return state.dailyWordPlan || {
+      day: wordDayKey(),
+      bank: currentWordBank(),
+      mode: $("#wordMode")?.value || "meaning",
+      count: normalizeDailyWordCount(state.dailyWordCount),
+      createdAt: "",
+      words: []
+    };
+  }
   const bank = currentWordBank();
   const mode = $("#wordMode")?.value || "meaning";
   const day = wordDayKey();
@@ -37584,7 +37601,15 @@ function applySharedState(data) {
   if (!data || typeof data !== "object") return;
   applyIncomingRewardMigration(data);
   if (data.wordProgressPatch && typeof data.wordProgressPatch === "object") {
-    state.wordProgress = { ...state.wordProgress, ...data.wordProgressPatch };
+    state.wordProgress = { ...state.wordProgress };
+    Object.entries(data.wordProgressPatch).forEach(([key, value]) => {
+      if (value === null) {
+        delete state.wordProgress[key];
+      } else {
+        state.wordProgress[key] = value;
+      }
+    });
+    saveLocalItem("jojoWordProgress", JSON.stringify(state.wordProgress));
   }
   if (data.wordProgress) state.wordProgress = data.wordProgress;
   if (data.wordBank) {
@@ -37753,7 +37778,10 @@ async function loadSharedSongHistory({ restoreLatest = false } = {}) {
 }
 
 async function loadSharedWordProgress() {
-  if (!serverPersistenceAvailable) return;
+  if (!serverPersistenceAvailable) {
+    wordProgressReady = true;
+    return;
+  }
   try {
     const response = await fetch(apiUrl("/api/word-progress"), { cache: "no-store" });
     if (!response.ok) throw new Error("word progress unavailable");
@@ -37761,9 +37789,14 @@ async function loadSharedWordProgress() {
     if (data.wordProgress && typeof data.wordProgress === "object") {
       state.wordProgress = data.wordProgress;
       saveLocalItem("jojoWordProgress", JSON.stringify(state.wordProgress));
+      wordProgressReady = true;
       renderWordStudyState({ syncSelect: true, library: currentViewId() === "words" });
+    } else {
+      wordProgressReady = true;
     }
-  } catch {}
+  } catch {
+    wordProgressReady = true;
+  }
 }
 
 async function saveSharedState(patch = {}, options = {}) {
@@ -40557,29 +40590,43 @@ function bindCardSlotEvents() {
 
 async function revealCardCottageCard(card) {
   const index = Number(card.dataset.cardIndex);
-  if (!Number.isFinite(index) || card.classList.contains("is-revealing")) return;
+  if (!Number.isFinite(index) || card.classList.contains("is-revealing") || card.disabled) return;
   if (state.cardCottage.revealed.includes(index)) {
     openCardPreview(index, card.dataset.cardPhotoSrc || "");
     return;
   }
-  const previousCardCottage = JSON.parse(JSON.stringify(state.cardCottage));
-  const previousGlobalRewards = JSON.parse(JSON.stringify(state.globalRewards));
-  ensureUniqueCardCottageReveal(index);
-  if (!spendCardCottageBigStar({ persist: false })) return;
-  lockCardCottageReveal(index);
-  state.cardCottage.revealed = [...new Set([...state.cardCottage.revealed, index])].sort((a, b) => a - b);
-  const photoSrc = cardCottagePhotoForIndex(index);
-  card.dataset.cardPhotoSrc = photoSrc;
+  if (state.globalRewards?.bigStars < 1) {
+    spendCardCottageBigStar({ persist: false });
+    return;
+  }
+  if (!serverPersistenceAvailable) {
+    showToast("服务器还没有连接好，请刷新后再抽卡。", "bad");
+    return;
+  }
+  card.disabled = true;
+  let photoSrc = "";
   try {
-    await saveCardCottageRevealSpend();
-  } catch {
-    state.cardCottage = previousCardCottage;
-    state.globalRewards = previousGlobalRewards;
-    saveLocalItem("jojoCardCottage", JSON.stringify(state.cardCottage));
-    saveLocalItem("jojoGlobalRewards", JSON.stringify(state.globalRewards));
-    renderGlobalRewards();
-    updateCardCottageSummary();
-    showToast("这张卡还没有保存成功，请再点一次。", "bad");
+    const response = await fetch(apiUrl("/api/card-cottage/reveal"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cardIndex: index })
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result.error) throw new Error(result.error || `抽卡接口返回 ${response.status}`);
+    if (result.state) applySharedState(result.state);
+    if (result.alreadyRevealed) {
+      card.disabled = false;
+      renderCardCottage();
+      openCardPreview(index, card.dataset.cardPhotoSrc || cardCottagePhotoForIndex(index));
+      return;
+    }
+    photoSrc = appAssetUrl(result.cardRecord?.src || cardCottagePhotoForIndex(index));
+    card.dataset.cardPhotoSrc = photoSrc;
+    const cardPhoto = card.querySelector(".reward-card-photo");
+    if (cardPhoto) cardPhoto.src = photoSrc;
+  } catch (error) {
+    card.disabled = false;
+    showToast(error.message || "这张卡还没有保存成功，请再点一次。", "bad");
     return;
   }
   updateCardCottageSummary();
@@ -40615,6 +40662,7 @@ async function revealCardCottageCard(card) {
   card.classList.remove("locked", "is-revealing", "is-revealing-source");
   card.classList.add("is-revealed");
   card.setAttribute("aria-label", `第 ${index + 1} 张已翻开奖励卡`);
+  card.disabled = false;
   flyer.remove();
   updateCardCottageSummary();
 }
@@ -41081,6 +41129,7 @@ async function startApp() {
   $("#artDate").valueAsDate = new Date();
   installCustomWordBankLabels();
   syncWordBankSelect();
+  await loadSharedWordProgress();
   fillAiSettingsForm();
   fillOssSettingsForm();
   state.cardCottage = normalizeCardCottageState(state.cardCottage);
@@ -41094,7 +41143,6 @@ async function startApp() {
   newKanaQuestion();
   newWordQuestion();
   renderPhonics();
-  loadSharedWordProgress();
 }
 
 async function init() {

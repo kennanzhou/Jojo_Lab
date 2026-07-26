@@ -281,12 +281,59 @@ function publicState(state, options = {}) {
 
 function mergeWordProgressState(currentProgress = {}, incomingProgress = {}, replace = false) {
   if (replace) return incomingProgress && typeof incomingProgress === "object" ? incomingProgress : {};
-  const currentKeys = Object.keys(currentProgress || {});
-  const incomingKeys = Object.keys(incomingProgress || {});
-  if (incomingKeys.length < currentKeys.length) {
-    return { ...(incomingProgress || {}), ...(currentProgress || {}) };
+  const merged = { ...(currentProgress || {}) };
+  Object.entries(incomingProgress || {}).forEach(([key, incomingRecord]) => {
+    merged[key] = mergeWordProgressRecord(merged[key], incomingRecord);
+  });
+  return merged;
+}
+
+function normalizeWordProgressRecord(record = {}) {
+  if (!record || typeof record !== "object") return { score: 0, wrongStreak: 0, purpleCorrect: 0 };
+  return {
+    score: Math.max(0, Number(record.score || 0)),
+    wrongStreak: Math.max(0, Number(record.wrongStreak || 0)),
+    purpleCorrect: Math.max(0, Number(record.purpleCorrect || 0)),
+    updatedAt: record.updatedAt ? String(record.updatedAt) : ""
+  };
+}
+
+function progressTime(record = {}) {
+  const time = Date.parse(record.updatedAt || "");
+  return Number.isFinite(time) ? time : 0;
+}
+
+function progressRank(record = {}) {
+  const normalized = normalizeWordProgressRecord(record);
+  const mastered = normalized.wrongStreak < 3 && normalized.score >= 3 ? 1000 : 0;
+  const redPenalty = normalized.wrongStreak >= 3 ? -100 : 0;
+  return mastered + normalized.score * 10 - normalized.wrongStreak + normalized.purpleCorrect + redPenalty;
+}
+
+function mergeWordProgressRecord(currentRecord, incomingRecord) {
+  if (incomingRecord === null) return null;
+  if (!currentRecord) return normalizeWordProgressRecord(incomingRecord);
+  if (!incomingRecord) return normalizeWordProgressRecord(currentRecord);
+  const current = normalizeWordProgressRecord(currentRecord);
+  const incoming = normalizeWordProgressRecord(incomingRecord);
+  const currentTime = progressTime(current);
+  const incomingTime = progressTime(incoming);
+  if (currentTime || incomingTime) {
+    return incomingTime >= currentTime ? incoming : current;
   }
-  return { ...(currentProgress || {}), ...(incomingProgress || {}) };
+  return progressRank(incoming) >= progressRank(current) ? incoming : current;
+}
+
+function mergeWordProgressPatchState(currentProgress = {}, incomingPatch = {}) {
+  const next = { ...(currentProgress || {}) };
+  Object.entries(incomingPatch || {}).forEach(([key, value]) => {
+    if (value === null) {
+      delete next[key];
+    } else {
+      next[key] = mergeWordProgressRecord(next[key], value);
+    }
+  });
+  return next;
 }
 
 function mergeCardCottageState(currentCard = {}, incomingCard = {}, replace = false) {
@@ -373,17 +420,57 @@ function enforceCardRevealSpend(current, next, patch) {
   };
 }
 
+function revealCardCottageState(current, cardIndex) {
+  const card = current.cardCottage || {};
+  const totalCards = Math.max(1, Math.min(100, Math.round(Number(card.totalCards || defaultState.cardCottage.totalCards))));
+  const index = Number(cardIndex);
+  if (!Number.isInteger(index) || index < 0 || index >= totalCards) {
+    const error = new Error("Invalid Card Cottage card.");
+    error.status = 400;
+    throw error;
+  }
+  const currentRevealed = revealedCardIndexes(card);
+  if (currentRevealed.has(index)) {
+    return { state: current, alreadyRevealed: true, cardIndex: index, record: cardCottageImageRecordForAssignment(card, index) };
+  }
+  const currentBigStars = Math.max(0, Number(current.globalRewards?.bigStars || 0));
+  if (currentBigStars < 1) {
+    const error = new Error("需要 1 颗全局大金星才能翻开奖励卡。");
+    error.status = 409;
+    throw error;
+  }
+  const next = JSON.parse(JSON.stringify(current));
+  next.cardCottage = { ...(next.cardCottage || {}) };
+  const assignments = Array.isArray(next.cardCottage.assignments) ? [...next.cardCottage.assignments] : [];
+  const sourceCount = new Set(assignments).size;
+  const revealedSources = new Set([...currentRevealed].map((revealedIndex) => assignments[revealedIndex]));
+  const currentSource = assignments[index];
+  if (assignments.length && revealedSources.has(currentSource) && revealedSources.size < sourceCount) {
+    const blockedIndexes = new Set([...currentRevealed, index]);
+    const swapIndex = assignments.findIndex((source, cardIndexForSource) => {
+      return !blockedIndexes.has(cardIndexForSource) && !revealedSources.has(source);
+    });
+    if (swapIndex >= 0) {
+      [assignments[index], assignments[swapIndex]] = [assignments[swapIndex], assignments[index]];
+    }
+  }
+  if (assignments.length) next.cardCottage.assignments = assignments;
+  next.cardCottage.revealedLocks = { ...(next.cardCottage.revealedLocks || {}) };
+  const record = cardCottageImageRecordForAssignment(next.cardCottage, index);
+  if (record?.src) next.cardCottage.revealedLocks[index] = record;
+  next.cardCottage.revealed = [...new Set([...currentRevealed, index])].sort((a, b) => a - b);
+  next.globalRewards = {
+    ...(next.globalRewards || {}),
+    bigStars: currentBigStars - 1,
+    migratedModuleBigStars: true
+  };
+  return { state: next, alreadyRevealed: false, cardIndex: index, record };
+}
+
 function applyStatePatch(current, patch) {
   const next = { ...current };
   if (patch.wordProgressPatch && typeof patch.wordProgressPatch === "object") {
-    next.wordProgress = { ...(current.wordProgress || {}) };
-    Object.entries(patch.wordProgressPatch).forEach(([key, value]) => {
-      if (value === null) {
-        delete next.wordProgress[key];
-      } else {
-        next.wordProgress[key] = value;
-      }
-    });
+    next.wordProgress = mergeWordProgressPatchState(current.wordProgress, patch.wordProgressPatch);
   }
   if (patch.wordProgress && typeof patch.wordProgress === "object") {
     next.wordProgress = mergeWordProgressState(current.wordProgress, patch.wordProgress, Boolean(patch.replaceWordProgress));
@@ -663,6 +750,33 @@ function mergeRequestStatePatch(req, patch, publicOptions = {}) {
     updatedAt: Date.now()
   });
   return publicState(next, publicOptions);
+}
+
+function revealCardCottageForRequest(req, cardIndex, publicOptions = {}) {
+  const info = authInfo(req);
+  if (!info.authenticated) {
+    const error = new Error("需要先登录。");
+    error.status = 401;
+    throw error;
+  }
+  const current = info.mode === "demo" ? (demoStateForAuth(info) || createDemoState()) : readState();
+  const result = revealCardCottageState(current, cardIndex);
+  if (info.mode === "demo") {
+    demoSessions.set(info.sessionId, {
+      state: result.state,
+      expiresAt: info.expiresAt,
+      updatedAt: Date.now()
+    });
+  } else if (!result.alreadyRevealed) {
+    writeState(result.state);
+  }
+  return {
+    ok: true,
+    alreadyRevealed: result.alreadyRevealed,
+    cardIndex: result.cardIndex,
+    cardRecord: result.record,
+    state: publicState(result.state, publicOptions)
+  };
 }
 
 function demoImageUpload(body) {
@@ -1806,7 +1920,12 @@ const server = http.createServer(async (req, res) => {
       const data = mergeRequestStatePatch(req, patch, { lite: true });
       const patchKeys = Object.keys(patch);
       if (patch.wordProgressPatch && patchKeys.length === 1) {
-        sendJson(res, 200, { wordProgressPatch: patch.wordProgressPatch });
+        const acceptedProgress = requestState(req).wordProgress || {};
+        const acceptedPatch = {};
+        Object.keys(patch.wordProgressPatch).forEach((key) => {
+          acceptedPatch[key] = acceptedProgress[key] || null;
+        });
+        sendJson(res, 200, { wordProgressPatch: acceptedPatch });
       } else {
         sendJson(res, 200, data);
       }
@@ -1884,6 +2003,11 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, isDemoRequest(req) ? { ...demoImageUpload(body), slot: Number(body.slot), name: String(body.fileName || `Card ${Number(body.slot) + 1}`).slice(0, 120) } : await saveCardCottageUpload(body));
       return;
     }
+    if (req.url.startsWith("/api/card-cottage/reveal") && req.method === "POST") {
+      const body = await readJson(req);
+      sendJson(res, 200, revealCardCottageForRequest(req, body.cardIndex, { lite: true }));
+      return;
+    }
     if (req.url.startsWith("/api/card-cottage/delete") && req.method === "POST") {
       const body = await readJson(req);
       if (!isDemoRequest(req)) deleteCardAssetSrc(body.src);
@@ -1896,7 +2020,7 @@ const server = http.createServer(async (req, res) => {
     }
     serveStatic(req, res);
   } catch (error) {
-    sendJson(res, 500, { error: error.message });
+    sendJson(res, Number(error.status || 500), { error: error.message });
   }
 });
 
