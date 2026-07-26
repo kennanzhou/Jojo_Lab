@@ -13,7 +13,7 @@ const buildMetaFile = path.join(publicDir, "build-meta.json");
 const cardAssetDir = path.join(dataDir, "card-cottage");
 const port = Number(process.env.PORT || 4173);
 const host = process.env.HOST || "127.0.0.1";
-const appBaseVersion = process.env.JOJO_APP_VERSION || "1.1";
+const appBaseVersion = process.env.JOJO_APP_VERSION || "1.2";
 const maxJsonBodyBytes = 32 * 1024 * 1024;
 const maxImageUploadBytes = 14 * 1024 * 1024;
 const authCookieName = "jojo_lab_auth";
@@ -123,7 +123,7 @@ const defaultState = {
   played: 0,
   artMode: false,
   gallery: null,
-  homeBackground: { mode: "preset", preset: "symbiote-cheer", src: "./assets/jojo-retro-hero-robot-symbiote.jpg" },
+  homeBackground: { mode: "preset", preset: "wash-gemini", src: "./assets/jojo-home-wash-gemini-009.jpg" },
   homeBackgroundPresets: [],
   aiSettings: {
     mode: "minimax-openai",
@@ -1281,6 +1281,7 @@ async function deleteOssObject(objectKey) {
 }
 
 const homeBackgroundPresetDefaults = [
+  { id: "wash-gemini", label: "Jojo 小巴", src: "./assets/jojo-home-wash-gemini-009.jpg" },
   { id: "symbiote-cheer", label: "黑影小巴", src: "./assets/jojo-retro-hero-robot-symbiote.jpg" },
   { id: "robot-cheer", label: "机器人小巴", src: "./assets/jojo-retro-hero-robot-cheer.png" },
   { id: "storybook", label: "故事小巴", src: "./assets/jojo-retro-hero-with-jojo.png" },
