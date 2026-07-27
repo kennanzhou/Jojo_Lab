@@ -35250,6 +35250,8 @@ let serverPersistenceAvailable = false;
 let syncTimer = null;
 let pendingSharedPatch = null;
 let sharedSaveChain = Promise.resolve();
+let sharedReconnectTimer = null;
+let sharedReconnectPromise = null;
 let wordProgressStorageTimer = null;
 let galleryPersistenceReady = false;
 let latestOssImageStorageStatus = null;
@@ -35790,6 +35792,37 @@ function persistWordProgress(changedKey = "", options = {}) {
   } else {
     saveSharedState({ wordProgress: state.wordProgress, ...(options.replace ? { replaceWordProgress: true } : {}) }, options);
   }
+}
+
+function wordProgressRecordTime(record = {}) {
+  const time = Date.parse(record?.updatedAt || "");
+  return Number.isFinite(time) ? time : 0;
+}
+
+function wordProgressRecordRank(record = {}) {
+  if (!record || typeof record !== "object") return -1;
+  const score = Math.max(0, Number(record.score || 0));
+  const wrongStreak = Math.max(0, Number(record.wrongStreak || 0));
+  const purpleCorrect = Math.max(0, Number(record.purpleCorrect || 0));
+  const mastered = wrongStreak < 3 && score >= 3 ? 1000 : 0;
+  const redPenalty = wrongStreak >= 3 ? -100 : 0;
+  return mastered + score * 10 - wrongStreak + purpleCorrect + redPenalty;
+}
+
+function shouldSyncLocalWordRecord(localRecord, serverRecord) {
+  if (!localRecord || typeof localRecord !== "object") return false;
+  if (!serverRecord) return true;
+  const localTime = wordProgressRecordTime(localRecord);
+  const serverTime = wordProgressRecordTime(serverRecord);
+  if (localTime || serverTime) return localTime > serverTime;
+  return wordProgressRecordRank(localRecord) > wordProgressRecordRank(serverRecord);
+}
+
+function newerLocalWordProgressPatch(localProgress = {}, serverProgress = {}) {
+  return Object.entries(localProgress || {}).reduce((patch, [key, record]) => {
+    if (shouldSyncLocalWordRecord(record, serverProgress?.[key])) patch[key] = record;
+    return patch;
+  }, {});
 }
 
 function readLocalJson(key, fallback = {}) {
@@ -37726,13 +37759,15 @@ function applySharedState(data) {
 async function loadSharedState() {
   try {
     const response = await fetch(apiUrl("/api/state?lite=1"), {
-      cache: "no-store"
+      cache: "no-store",
+      credentials: "include"
     });
     if (!response.ok) throw new Error("state unavailable");
     serverPersistenceAvailable = true;
     applySharedState(await response.json());
   } catch {
     serverPersistenceAvailable = false;
+    scheduleSharedReconnect();
   }
 }
 
@@ -37780,30 +37815,44 @@ async function loadSharedSongHistory({ restoreLatest = false } = {}) {
 }
 
 async function loadSharedWordProgress() {
+  const localProgress = readLocalJson("jojoWordProgress", {});
   if (!serverPersistenceAvailable) {
     wordProgressReady = true;
+    if (Object.keys(localProgress).length) {
+      pendingSharedPatch = mergeSharedPatch(pendingSharedPatch, { wordProgressPatch: localProgress });
+      scheduleSharedReconnect();
+    }
     return;
   }
   try {
-    const response = await fetch(apiUrl("/api/word-progress"), { cache: "no-store" });
+    const response = await fetch(apiUrl("/api/word-progress"), { cache: "no-store", credentials: "include" });
     if (!response.ok) throw new Error("word progress unavailable");
     const data = await response.json();
     if (data.wordProgress && typeof data.wordProgress === "object") {
-      state.wordProgress = data.wordProgress;
+      const localPatch = newerLocalWordProgressPatch(localProgress, data.wordProgress);
+      state.wordProgress = { ...data.wordProgress, ...localPatch };
       saveLocalItem("jojoWordProgress", JSON.stringify(state.wordProgress));
       wordProgressReady = true;
+      if (Object.keys(localPatch).length) {
+        await saveSharedState({ wordProgressPatch: localPatch }, { immediate: true });
+      }
       renderWordStudyState({ syncSelect: true, library: currentViewId() === "words" });
     } else {
       wordProgressReady = true;
     }
   } catch {
     wordProgressReady = true;
+    scheduleSharedReconnect();
   }
 }
 
 async function saveSharedState(patch = {}, options = {}) {
-  if (!serverPersistenceAvailable) return;
   pendingSharedPatch = mergeSharedPatch(pendingSharedPatch, patch);
+  if (!serverPersistenceAvailable) {
+    scheduleSharedReconnect();
+    if (options.strict) throw new Error("shared state unavailable");
+    return;
+  }
   if (options.immediate) {
     await flushSharedState(options);
     return;
@@ -37825,6 +37874,8 @@ async function flushSharedState(options = {}) {
     .then(() => postSharedStatePatch(nextPatch, options))
     .catch(() => {
       serverPersistenceAvailable = false;
+      pendingSharedPatch = mergeSharedPatch(nextPatch, pendingSharedPatch);
+      scheduleSharedReconnect();
       if (options.strict) throw new Error("shared state save failed");
     });
   await sharedSaveChain;
@@ -37844,6 +37895,7 @@ async function postSharedStatePatch(patch = {}, options = {}) {
   const body = JSON.stringify(patch);
   const response = await fetch(apiUrl("/api/state"), {
     method: "POST",
+    credentials: "include",
     headers: {
       "Content-Type": "application/json"
     },
@@ -37851,7 +37903,48 @@ async function postSharedStatePatch(patch = {}, options = {}) {
     keepalive: Boolean(options.keepalive && body.length < 60000)
   });
   if (!response.ok) throw new Error(`state save failed: ${response.status}`);
+  serverPersistenceAvailable = true;
   applySharedState(await response.json());
+}
+
+function scheduleSharedReconnect(delayMs = 2500) {
+  if (demoMode || sharedReconnectTimer || sharedReconnectPromise) return;
+  sharedReconnectTimer = window.setTimeout(() => {
+    sharedReconnectTimer = null;
+    reconnectSharedState();
+  }, delayMs);
+}
+
+async function reconnectSharedState() {
+  if (demoMode) return false;
+  if (sharedReconnectPromise) return sharedReconnectPromise;
+  sharedReconnectPromise = (async () => {
+    try {
+      const response = await fetch(apiUrl("/api/state?lite=1"), {
+        cache: "no-store",
+        credentials: "include"
+      });
+      if (!response.ok) throw new Error("state unavailable");
+      serverPersistenceAvailable = true;
+      applySharedState(await response.json());
+      if (pendingSharedPatch) await flushSharedState({ immediate: true });
+      if (!serverPersistenceAvailable) throw new Error("state save still unavailable");
+      if (currentViewId() === "words") await loadSharedWordProgress();
+      renderGlobalRewards();
+      renderWordRewards();
+      renderCardCottage();
+      return true;
+    } catch {
+      serverPersistenceAvailable = false;
+      window.setTimeout(() => {
+        if (!serverPersistenceAvailable) reconnectSharedState();
+      }, 5000);
+      return false;
+    } finally {
+      sharedReconnectPromise = null;
+    }
+  })();
+  return sharedReconnectPromise;
 }
 
 function closeSettings() {
@@ -40602,8 +40695,16 @@ async function revealCardCottageCard(card) {
     return;
   }
   if (!serverPersistenceAvailable) {
-    showToast("服务器还没有连接好，请刷新后再抽卡。", "bad");
-    return;
+    showToast("正在重新连接服务器...", "good");
+    const reconnected = await reconnectSharedState();
+    if (!reconnected) {
+      showToast("服务器还没有连接好，请刷新后再抽卡。", "bad");
+      return;
+    }
+    if (state.globalRewards?.bigStars < 1) {
+      spendCardCottageBigStar({ persist: false });
+      return;
+    }
   }
   card.disabled = true;
   let photoSrc = "";
