@@ -38255,30 +38255,13 @@ function filteredWords() {
   });
 }
 
-function progressTickGroups(bankWords, maxTicks = 240) {
-  if (bankWords.length <= maxTicks) {
-    return bankWords.map((word) => ({ level: wordLevel(word).toLowerCase(), title: `${word.word} · ${wordLevel(word)}` }));
-  }
-  const groupSize = Math.ceil(bankWords.length / maxTicks);
-  const groups = [];
-  for (let index = 0; index < bankWords.length; index += groupSize) {
-    const group = bankWords.slice(index, index + groupSize);
-    const levels = group.map((word) => wordLevel(word));
-    let level = "0";
-    if (levels.includes("N")) {
-      level = "n";
-    } else if (levels.every((item) => item === "3")) {
-      level = "3";
-    } else {
-      const average = levels.reduce((sum, item) => sum + (Number(item) || 0), 0) / Math.max(1, levels.length);
-      level = String(Math.max(0, Math.min(3, Math.round(average))));
-    }
-    groups.push({
-      level,
-      title: `${group[0].word} - ${group[group.length - 1].word}`
-    });
-  }
-  return groups;
+function progressTicksForWords(bankWords) {
+  return bankWords.map((word) => ({ level: wordLevel(word).toLowerCase(), title: `${word.word} · ${wordLevel(word)}` }));
+}
+
+function wordOverallProgressRows(count) {
+  if (!count) return 1;
+  return Math.min(10, Math.max(1, Math.ceil(count / 220)));
 }
 
 function renderWordProgress() {
@@ -38287,8 +38270,8 @@ function renderWordProgress() {
   const todayWords = dailyWords();
   const mastered = bankWords.filter((word) => isWordMastered(word)).length;
   const todayMastered = todayWords.filter((word) => isWordMastered(word)).length;
-  const overallTicks = progressTickGroups(bankWords);
-  const rows = Math.min(maxProgressRows, Math.max(1, Math.ceil(Math.sqrt(overallTicks.length / 3))));
+  const overallTicks = progressTicksForWords(bankWords);
+  const rows = wordOverallProgressRows(overallTicks.length);
   const columns = Math.max(1, Math.ceil(overallTicks.length / rows));
   const modeLabel = $("#wordMode").selectedOptions[0]?.textContent || "练习";
   $("#wordProgressTitle").textContent = `总体完成量`;
