@@ -38261,7 +38261,7 @@ function progressTicksForWords(bankWords) {
 
 function wordOverallProgressRows(count) {
   if (!count) return 1;
-  return Math.min(10, Math.max(1, Math.ceil(count / 220)));
+  return Math.min(14, Math.max(1, Math.ceil(count / 140)));
 }
 
 function renderWordProgress() {

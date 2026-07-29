@@ -137,7 +137,7 @@ Primary use cases:
 - Word Camp answer buttons and spelling keyboard controls must use touch-safe handlers and debounce correct-answer advancement so iPad touch/click synthesis or old timers cannot skip to another word before the child answers. New Word Camp questions must not inherit selected/focused/hover-highlight state from the previous question, including hover state caused by the pointer staying over the same screen position after the next card renders.
 - Word Camp random question selection should avoid showing the exact same word twice in a row whenever more than one eligible word is available.
 - Word Camp owns daily word count, VO follow-up, word bank import, word bank switching, word bank management, word mastery edits, and Word Camp small-star reset settings. Word Camp small stars exchange into global big stars; resetting Word Camp small stars must not reset global big stars.
-- Word Camp's overall word-bank progress strip should render every word as its own very compact flat tick instead of grouping words into averaged colors. A completed word should be visibly red in the overall strip, matching the completion count; do not hide completed words inside pale grouped averages.
+- Word Camp's overall word-bank progress strip should render every word as its own compact flat tick instead of grouping words into averaged colors. Keep this overall strip much taller than the daily strip, roughly triple the older compact height for large banks such as KET, so each tick has enough visual area. A completed word should be visibly red in the overall strip, matching the completion count; do not hide completed words inside pale grouped averages.
 
 ## Card Cottage Specifics
 
