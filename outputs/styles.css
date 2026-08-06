@@ -7405,6 +7405,20 @@ main,
   object-fit: contain;
 }
 
+.big-star-zero {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: rgba(111, 51, 40, 0.62);
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.big-star-zero img {
+  opacity: 0.36;
+  filter: grayscale(0.25);
+}
+
 .star-more {
   color: var(--retro-brown);
   font-weight: 900;

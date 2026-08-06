@@ -35284,6 +35284,7 @@ const baseWordBankLabels = {
   all: "全部词库"
 };
 const wordBankLabels = { ...baseWordBankLabels };
+const pendingSharedPatchStorageKey = "jojoPendingSharedPatch";
 
 function saveLocalItem(key, value) {
   if (demoMode) {
@@ -35299,6 +35300,10 @@ function removeLocalItem(key) {
     return;
   }
   localStorage.removeItem(key);
+}
+
+function getLocalItem(key) {
+  return demoMode ? demoLocalStore.get(String(key)) || null : localStorage.getItem(key);
 }
 
 const wordImportGuideText = `请把词汇表整理成一个 JSON 对象，方便导入 Jojo LAB 的 Word Camp。
@@ -35827,11 +35832,28 @@ function newerLocalWordProgressPatch(localProgress = {}, serverProgress = {}) {
 
 function readLocalJson(key, fallback = {}) {
   try {
-    const value = JSON.parse(localStorage.getItem(key) || "null");
+    const value = JSON.parse(getLocalItem(key) || "null");
     return value && typeof value === "object" ? value : fallback;
   } catch {
     return fallback;
   }
+}
+
+function loadPendingSharedPatch() {
+  return readLocalJson(pendingSharedPatchStorageKey, null);
+}
+
+function persistPendingSharedPatch() {
+  if (pendingSharedPatch && Object.keys(pendingSharedPatch).length) {
+    saveLocalItem(pendingSharedPatchStorageKey, JSON.stringify(pendingSharedPatch));
+  } else {
+    removeLocalItem(pendingSharedPatchStorageKey);
+  }
+}
+
+function setPendingSharedPatch(patch) {
+  pendingSharedPatch = patch && Object.keys(patch).length ? patch : null;
+  persistPendingSharedPatch();
 }
 
 function rewardNumber(value) {
@@ -36122,7 +36144,7 @@ function renderBigStarTray(selector) {
   const visibleBigStars = Math.min(bigStars, 4);
   tray.innerHTML = bigStars
     ? `${Array.from({ length: visibleBigStars }, () => `<img src="./assets/gold-star-reward.png" alt="大星星">`).join("")}${bigStars > visibleBigStars ? `<span class="star-more">+${bigStars - visibleBigStars}</span>` : ""}`
-    : "";
+    : `<span class="big-star-zero"><img src="./assets/gold-star-reward.png" alt="大星星"><span>0</span></span>`;
   tray.setAttribute("aria-label", `全局大星星 ${bigStars} 颗`);
 }
 
@@ -37765,6 +37787,7 @@ async function loadSharedState() {
     if (!response.ok) throw new Error("state unavailable");
     serverPersistenceAvailable = true;
     applySharedState(await response.json());
+    if (pendingSharedPatch) await flushSharedState({ immediate: true });
   } catch {
     serverPersistenceAvailable = false;
     scheduleSharedReconnect();
@@ -37819,7 +37842,7 @@ async function loadSharedWordProgress() {
   if (!serverPersistenceAvailable) {
     wordProgressReady = true;
     if (Object.keys(localProgress).length) {
-      pendingSharedPatch = mergeSharedPatch(pendingSharedPatch, { wordProgressPatch: localProgress });
+      setPendingSharedPatch(mergeSharedPatch(pendingSharedPatch, { wordProgressPatch: localProgress }));
       scheduleSharedReconnect();
     }
     return;
@@ -37847,7 +37870,7 @@ async function loadSharedWordProgress() {
 }
 
 async function saveSharedState(patch = {}, options = {}) {
-  pendingSharedPatch = mergeSharedPatch(pendingSharedPatch, patch);
+  setPendingSharedPatch(mergeSharedPatch(pendingSharedPatch, patch));
   if (!serverPersistenceAvailable) {
     scheduleSharedReconnect();
     if (options.strict) throw new Error("shared state unavailable");
@@ -37867,14 +37890,14 @@ async function flushSharedState(options = {}) {
   window.clearTimeout(syncTimer);
   syncTimer = null;
   const nextPatch = pendingSharedPatch || {};
-  pendingSharedPatch = null;
+  setPendingSharedPatch(null);
   if (!Object.keys(nextPatch).length) return;
   sharedSaveChain = sharedSaveChain
     .catch(() => {})
     .then(() => postSharedStatePatch(nextPatch, options))
     .catch(() => {
       serverPersistenceAvailable = false;
-      pendingSharedPatch = mergeSharedPatch(nextPatch, pendingSharedPatch);
+      setPendingSharedPatch(mergeSharedPatch(nextPatch, pendingSharedPatch));
       scheduleSharedReconnect();
       if (options.strict) throw new Error("shared state save failed");
     });
@@ -37882,7 +37905,11 @@ async function flushSharedState(options = {}) {
 }
 
 function mergeSharedPatch(previous, incoming) {
+  previous = previous && typeof previous === "object" ? previous : null;
+  incoming = incoming && typeof incoming === "object" ? incoming : null;
+  if (!previous && !incoming) return {};
   if (!previous) return { ...incoming };
+  if (!incoming) return { ...previous };
   const merged = { ...previous, ...incoming };
   if (previous.wordProgressPatch || incoming.wordProgressPatch) {
     merged.wordProgressPatch = { ...(previous.wordProgressPatch || {}), ...(incoming.wordProgressPatch || {}) };
@@ -37890,6 +37917,8 @@ function mergeSharedPatch(previous, incoming) {
   if (incoming.wordProgress) delete merged.wordProgressPatch;
   return merged;
 }
+
+setPendingSharedPatch(mergeSharedPatch(pendingSharedPatch, loadPendingSharedPatch()));
 
 async function postSharedStatePatch(patch = {}, options = {}) {
   const body = JSON.stringify(patch);
