@@ -341,7 +341,9 @@ function mergeCardCottageState(currentCard = {}, incomingCard = {}, replace = fa
   const currentRevealed = new Set(Array.isArray(currentCard.revealed) ? currentCard.revealed.map(Number) : []);
   const incomingRevealed = new Set(Array.isArray(incomingCard.revealed) ? incomingCard.revealed.map(Number) : []);
   const merged = { ...(currentCard || {}), ...(incomingCard || {}) };
-  merged.revealedLocks = { ...(currentCard.revealedLocks || {}), ...(incomingCard.revealedLocks || {}) };
+  // A revealed card's image is immutable. Accept locks for newly revealed cards,
+  // but never let a stale browser replace a lock the server already knows.
+  merged.revealedLocks = { ...(incomingCard.revealedLocks || {}), ...(currentCard.revealedLocks || {}) };
   if (incomingRevealed.size < currentRevealed.size) {
     ["assignments", "slots", "totalCards", "defaultSlotsSeeded"].forEach((key) => {
       if (key in currentCard) merged[key] = currentCard[key];
@@ -374,6 +376,35 @@ function cardCottageImageRecordForAssignment(card = {}, cardIndex = 0) {
     src: cardCottageBuiltInFronts[sourceIndex] || cardCottageBuiltInFronts[0],
     updatedAt: "built-in"
   };
+}
+
+function cardCottageLockedImageRecord(card = {}, cardIndex = 0) {
+  const locked = card.revealedLocks && typeof card.revealedLocks === "object"
+    ? card.revealedLocks[cardIndex]
+    : null;
+  return locked?.src ? locked : cardCottageImageRecordForAssignment(card, cardIndex);
+}
+
+function cardCottageProtectedObjectKeys(state = {}) {
+  const card = state.cardCottage || {};
+  const protectedKeys = new Set();
+  for (const index of revealedCardIndexes(card)) {
+    const locked = card.revealedLocks && typeof card.revealedLocks === "object"
+      ? card.revealedLocks[index]
+      : null;
+    const record = locked?.objectKey ? locked : cardCottageImageRecordForAssignment(card, index);
+    if (record?.objectKey) protectedKeys.add(String(record.objectKey));
+  }
+  return protectedKeys;
+}
+
+function cardCottageKnownObjectKeys(state = {}) {
+  const card = state.cardCottage || {};
+  const keys = new Set(cardCottageProtectedObjectKeys(state));
+  for (const slot of Array.isArray(card.slots) ? card.slots : []) {
+    if (slot?.objectKey) keys.add(String(slot.objectKey));
+  }
+  return keys;
 }
 
 function enforceCardRevealSpend(current, next, patch) {
@@ -431,7 +462,7 @@ function revealCardCottageState(current, cardIndex) {
   }
   const currentRevealed = revealedCardIndexes(card);
   if (currentRevealed.has(index)) {
-    return { state: current, alreadyRevealed: true, cardIndex: index, record: cardCottageImageRecordForAssignment(card, index) };
+    return { state: current, alreadyRevealed: true, cardIndex: index, record: cardCottageLockedImageRecord(card, index) };
   }
   const currentBigStars = Math.max(0, Number(current.globalRewards?.bigStars || 0));
   if (currentBigStars < 1) {
@@ -1933,6 +1964,21 @@ const server = http.createServer(async (req, res) => {
       }
       return;
     }
+    if (requestUrl.pathname === "/api/card-cottage/image" && req.method === "GET") {
+      const objectKey = String(requestUrl.searchParams.get("objectKey") || "");
+      const current = requestState(req);
+      if (!objectKey || !cardCottageKnownObjectKeys(current).has(objectKey)) {
+        sendJson(res, 404, { error: "Card Cottage 图片不存在。" });
+        return;
+      }
+      res.writeHead(302, {
+        Location: signOssReadUrl(objectKey),
+        "Cache-Control": "private, no-store",
+        "Referrer-Policy": "no-referrer"
+      });
+      res.end();
+      return;
+    }
     if (requestUrl.pathname === "/api/gallery" && req.method === "GET") {
       sendJson(res, 200, { gallery: publicState(requestState(req)).gallery || [] });
       return;
@@ -1991,6 +2037,10 @@ const server = http.createServer(async (req, res) => {
       const body = await readJson(req);
       if (isDemoRequest(req)) {
         sendJson(res, 200, { ok: true, demo: true });
+        return;
+      }
+      if (cardCottageProtectedObjectKeys(requestState(req)).has(String(body.objectKey || ""))) {
+        sendJson(res, 200, { ok: true, deleted: false, protected: true });
         return;
       }
       sendJson(res, 200, await deleteOssObject(body.objectKey));

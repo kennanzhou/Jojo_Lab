@@ -161,6 +161,7 @@ Primary use cases:
 - Revealing a hidden Card Cottage card and spending 1 global big star must persist as one atomic shared-state update; never save the reveal and the star deduction as separate competing writes.
 - Card Cottage reveal animation should only proceed after the shared-state reveal/spend save is confirmed; do not show a successful reveal that can disappear after refresh.
 - Once a Card Cottage card is revealed, its actual front image must be locked with that card and must not change when front slots are uploaded, replaced, deleted, or rerolled later.
+- Repairing Card Cottage images, refreshing expired media URLs, and changing front-image slots must preserve every revealed card's index and ordering. Never compact, shift, reroll, or reassign already revealed card positions during recovery.
 - Newly revealed Card Cottage fronts should avoid repeating the same photo/source until every available front image source has been revealed once; only then may repeats appear.
 - Revealed cards can open a large photo preview, but the full image must remain visible in both portrait and landscape viewports; use fixed full-screen contain sizing, never crop it off-screen. Card reveal fly-out scaling should also be clamped to the viewport so the enlarged card remains visible.
 - A deck of unrevealed cards should feel collectible and child-facing; avoid flat admin grids.

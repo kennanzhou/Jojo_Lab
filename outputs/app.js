@@ -36522,17 +36522,27 @@ function normalizeCardCottageState(value = {}) {
   if (!validSources.size) {
     cardCottagePhotoSources.forEach((_, index) => validSources.add(index));
   }
-  const incomingAssignments = Array.isArray(value.assignments)
-    ? value.assignments.map((item) => Number(item)).filter((item) => validSources.has(item)).slice(0, totalCards)
-    : [];
-  const assignments = incomingAssignments.length === totalCards
-    ? incomingAssignments
-    : [...incomingAssignments, ...shuffledCardAssignments(slots, totalCards - incomingAssignments.length)];
   const revealed = Array.isArray(value.revealed)
     ? value.revealed.map(Number).filter((item) => item >= 0 && item < totalCards)
     : [];
   const uniqueRevealed = [...new Set(revealed)];
+  const revealedSet = new Set(uniqueRevealed);
   const revealedLocks = normalizeCardCottageRevealLocks(value.revealedLocks, totalCards);
+  const incomingAssignments = Array.isArray(value.assignments) ? value.assignments.slice(0, totalCards) : [];
+  const replacementAssignments = shuffledCardAssignments(slots, totalCards);
+  let replacementIndex = 0;
+  const assignments = Array.from({ length: totalCards }, (_, cardIndex) => {
+    const sourceIndex = Number(incomingAssignments[cardIndex]);
+    if (validSources.has(sourceIndex)) return sourceIndex;
+    // Keep a revealed card anchored to its original source slot even if that
+    // slot was later removed. Its immutable reveal lock still owns the image.
+    if (revealedSet.has(cardIndex) && Number.isInteger(sourceIndex) && sourceIndex >= 0 && sourceIndex < cardCottageSlotTotal) {
+      return sourceIndex;
+    }
+    const replacement = replacementAssignments[replacementIndex];
+    replacementIndex += 1;
+    return replacement;
+  });
   uniqueRevealed.forEach((index) => {
     if (!revealedLocks[index]) {
       const record = cardCottagePhotoRecordForAssignment(assignments[index] || 0, slots);
@@ -40416,7 +40426,7 @@ function resetCardCottage() {
 
 function cardCottagePhotoSourceForAssignment(sourceIndex) {
   const record = cardCottagePhotoRecordForAssignment(sourceIndex);
-  return appAssetUrl(record?.src || cardCottagePhotoSources[0]);
+  return cardCottageImageUrl(record);
 }
 
 function cardCottageLockedRecordForIndex(index) {
@@ -40435,9 +40445,16 @@ function cardCottageRecordForIndex(index) {
   return cardCottagePhotoRecordForAssignment(photoIndex);
 }
 
+function cardCottageImageUrl(record = {}) {
+  if (record?.storage === "oss" && record.objectKey) {
+    return apiUrl(`/api/card-cottage/image?objectKey=${encodeURIComponent(record.objectKey)}`);
+  }
+  return appAssetUrl(record?.src || cardCottagePhotoSources[0]);
+}
+
 function cardCottagePhotoForIndex(index) {
   const record = cardCottageRecordForIndex(index);
-  return appAssetUrl(record?.src || cardCottagePhotoSources[0]);
+  return cardCottageImageUrl(record);
 }
 
 function ensureUniqueCardCottageReveal(index) {
@@ -40559,7 +40576,7 @@ function renderCardCottageSettings() {
       <article class="card-slot ${slot?.src ? "has-image" : ""}" data-card-slot="${index}">
         <input class="card-slot-input" id="cardSlotInput${index}" type="file" accept="image/png,image/jpeg,image/webp" data-card-slot-input="${index}">
         <button class="card-slot-drop" type="button" data-card-slot-pick="${index}" aria-label="${slot?.src ? `替换第 ${index + 1} 个卡槽图片` : `上传第 ${index + 1} 个卡槽图片`}">
-          ${slot?.src ? `<img src="${escapeHtml(slot.src)}" alt="第 ${index + 1} 个卡槽图片">` : `<span>+</span>`}
+          ${slot?.src ? `<img src="${escapeHtml(cardCottageImageUrl(slot))}" alt="第 ${index + 1} 个卡槽图片">` : `<span>+</span>`}
           <strong>Slot ${slotNumber}</strong>
           <small>${slot?.src ? "点击或拖放替换" : "点击或拖放上传"}</small>
         </button>
@@ -40735,7 +40752,9 @@ async function revealCardCottageCard(card) {
       openCardPreview(index, card.dataset.cardPhotoSrc || cardCottagePhotoForIndex(index));
       return;
     }
-    photoSrc = appAssetUrl(result.cardRecord?.src || cardCottagePhotoForIndex(index));
+    photoSrc = result.cardRecord
+      ? cardCottageImageUrl(normalizeCardCottageImageRecord(result.cardRecord, `Card ${index + 1}`))
+      : cardCottagePhotoForIndex(index);
     card.dataset.cardPhotoSrc = photoSrc;
     const cardPhoto = card.querySelector(".reward-card-photo");
     if (cardPhoto) cardPhoto.src = photoSrc;
