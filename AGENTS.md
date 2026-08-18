@@ -154,6 +154,7 @@ Primary use cases:
 - Card Cottage settings must also let the user set the deck's total card count. Keep this deck total separate from the 100 front-image slots; if the deck has more cards than filled image slots, repeat available images randomly.
 - Card Cottage's built-in/default Jojo photos should appear in those front-image slots by default, so users can see, delete, or replace them from the same interface.
 - Card Cottage uploaded slot images should persist through the local shared state/service so all terminals see the same deck assets.
+- Card Cottage OSS images should render through a stable app proxy URL based on `objectKey`, not through persisted temporary signed OSS URLs. Signed URLs may be generated only at request time by the server-side image proxy.
 - If fewer Card Cottage slot images are filled than the configured deck total, the visible deck should randomly repeat the available uploaded images. If none are uploaded, use the built-in Jojo reward photos as a fallback.
 - Card fronts can use Jojo photos with a transparent gold frame overlay; preserve only the gold frame art, not any black background from the frame source.
 - Flipping a hidden Card Cottage card costs 1 global big gold star. If no big gold star is available, block the reveal and explain that the child needs to earn a big star from any practice module first.

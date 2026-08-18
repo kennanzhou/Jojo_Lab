@@ -1181,6 +1181,15 @@ function publicOssImageRecord(record, field, config) {
   }
 }
 
+function publicCardCottageImageRecord(record) {
+  if (!record || typeof record !== "object") return record;
+  if (record.storage !== "oss" || !record.objectKey) return record;
+  return {
+    ...record,
+    src: `/api/card-cottage/image?objectKey=${encodeURIComponent(record.objectKey)}`
+  };
+}
+
 function applySignedOssUrlsToPublicState(state) {
   let config = null;
   try {
@@ -1200,10 +1209,10 @@ function applySignedOssUrlsToPublicState(state) {
   if (state.cardCottage && Array.isArray(state.cardCottage.slots)) {
     state.cardCottage = {
       ...state.cardCottage,
-      slots: state.cardCottage.slots.map((slot) => slot ? publicOssImageRecord(slot, "src", config) : slot),
+      slots: state.cardCottage.slots.map((slot) => slot ? publicCardCottageImageRecord(slot) : slot),
       revealedLocks: Object.fromEntries(Object.entries(state.cardCottage.revealedLocks || {}).map(([key, lock]) => [
         key,
-        lock ? publicOssImageRecord(lock, "src", config) : lock
+        lock ? publicCardCottageImageRecord(lock) : lock
       ]))
     };
   }
