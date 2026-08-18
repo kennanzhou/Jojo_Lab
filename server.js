@@ -1938,6 +1938,21 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, appVersionMeta());
       return;
     }
+    if (requestUrl.pathname === "/api/card-cottage/image" && req.method === "GET") {
+      const objectKey = String(requestUrl.searchParams.get("objectKey") || "");
+      const current = readState();
+      if (!objectKey || !cardCottageKnownObjectKeys(current).has(objectKey)) {
+        sendJson(res, 404, { error: "Card Cottage 图片不存在。" });
+        return;
+      }
+      res.writeHead(302, {
+        Location: signOssReadUrl(objectKey),
+        "Cache-Control": "private, no-store",
+        "Referrer-Policy": "no-referrer"
+      });
+      res.end();
+      return;
+    }
     if (requestUrl.pathname === "/api/auth/logout" && req.method === "POST") {
       const info = authInfo(req);
       if (info.mode === "demo") demoSessions.delete(info.sessionId);
@@ -1971,21 +1986,6 @@ const server = http.createServer(async (req, res) => {
       } else {
         sendJson(res, 200, data);
       }
-      return;
-    }
-    if (requestUrl.pathname === "/api/card-cottage/image" && req.method === "GET") {
-      const objectKey = String(requestUrl.searchParams.get("objectKey") || "");
-      const current = requestState(req);
-      if (!objectKey || !cardCottageKnownObjectKeys(current).has(objectKey)) {
-        sendJson(res, 404, { error: "Card Cottage 图片不存在。" });
-        return;
-      }
-      res.writeHead(302, {
-        Location: signOssReadUrl(objectKey),
-        "Cache-Control": "private, no-store",
-        "Referrer-Policy": "no-referrer"
-      });
-      res.end();
       return;
     }
     if (requestUrl.pathname === "/api/gallery" && req.method === "GET") {
